@@ -99,3 +99,11 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+
+#Data
+data/*
+
+#MacOS
+._*
+.DS_Store
