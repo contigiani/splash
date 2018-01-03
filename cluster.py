@@ -3,9 +3,9 @@ import numpy as np
 from astropy.units import Quantity
 
 '''
-    Splashback radius
+    Splashback radius for KSB source catalogs
 
-    Assumes all distances to be conmoving, Assumes Hoekstra+ 2015 cosmology with h=1.
+    Assumes all distances to be comoving, Assumes Hoekstra+ 2015 cosmology with h=1.
 '''
 
 
@@ -152,7 +152,7 @@ class cluster:
         '''
 
 
-        idx = (self.m > self.mmin) & (self.m < self.mmax) & (self.pg > 0.1) #& (delmag==0)
+        idx = (self.m > self.mmin) & (self.m < self.mmax) #& (delmag==0)
         x, y, e1, e2, pg, de, m, mu = self.x[idx], self.y[idx], self.e1[idx], self.e2[idx], self.pg[idx], self.de[idx], self.m[idx], self.mu[idx]
 
         #Transform x and y in arcsec
@@ -166,7 +166,7 @@ class cluster:
         w = pg**2./((0.25*pg)**2. + de**2.)
         wg = pg/((0.25*pg)**2. + de**2.)
         et = -((x*x-y*y)*e1 + 2.0*x*y*e2)/r**2.
-        ex = ((x*x-y*y)*e2-2.0*x*y*e1)/r**2
+        ex = ((x*x-y*y)*e2-2.0*x*y*e1)/r**2.
 
         bin_edges = Quantity(bin_edges)
 
@@ -179,12 +179,12 @@ class cluster:
         rmax = bin_edges[1:]
 
         nbin = len(rmin)
-        rbin = 0.667*(rmax**3-rmin**3)/(rmax**2-rmin**2) # area-weighted average
+        rbin = 0.667*(rmax**3.-rmin**3.)/(rmax**2.-rmin**2.) # area-weighted average
         nbin, gtbin, gxbin, dgtbin, kbin = [np.zeros(nbin) for i in xrange(5)]
 
 
         for i in xrange(len(rmin)):
-            idx = (r < rmax[i]) & (r > rmin[i])
+            idx = (r < rmax[i]) & (r >= rmin[i])
             nbin[i] = idx.sum()
             gtbin[i] = np.sum(wg[idx]*et[idx])/np.sum(w[idx])
             gxbin[i] = np.sum(wg[idx]*ex[idx])/np.sum(w[idx])
