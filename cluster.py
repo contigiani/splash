@@ -45,7 +45,7 @@ class cluster_sample:
 
     def stack_ESD(self, bin_edges=None, idxlist=None):
         '''
-            Return the stack or renormalized ESD
+            Stack scaled ESDs
 
             Parameters
             ----------
@@ -195,6 +195,7 @@ class cluster:
         self.gtbin = gtbin/kbin
         self.gxbin = gxbin/kbin
         self.dgtbin = dgtbin
+        self.nbin = nbin
 
     def print_info(self):
         print 'Cluster name: '+self.name
