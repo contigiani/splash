@@ -16,7 +16,7 @@ column_list = ['name', 'z', 'xcen', 'ycen', 'mmin', 'mmax', 'da', 'beta_avg', 'r
 source_column_list = ['x', 'y', 'm', 'e1', 'e2', 'de', 'pg', 'mu', 'delmag']
 meta_var = {'details' : 'CCCP sample - Hoekstra+ 2015, Planck r_500, m_500'}
 name = [None]*len(data)
-da, r_500, m_500, n_0, r_core, r_max = da*u.Gpc/u.rad, r_500*u.Mpc, m_500*u.Msun, n_0*u.Mpc, r_core*u.Mpc, r_max*u.Mpc
+da, r_500, m_500, n_0, r_core, r_max = da*u.Gpc/u.rad, r_500*u.Mpc, m_500*u.Msun, n_0*u.arcsec, r_core*u.Mpc, r_max*u.Mpc
 
 i=0
 for cluster_name in data['name_cl']:
@@ -33,7 +33,7 @@ for cluster_name in data['name_cl']:
     m_500[i] = data_planck['m_d'][data_planck['name_clus']==cluster_name]*u.Msun
 
     data_contam = np.loadtxt('data/original/CONTAM_PAR/'+cluster_name+'.par')
-    n_0[i] = data_contam[6,4]/data_contam[6, 8]*u.Mpc
+    n_0[i] = data_contam[6,4]/data_contam[6, 8]*u.arcsec
     r_core[i] = data_contam[6,6]*u.Mpc*0.7
     r_max[i] = 4 *0.7* u.Mpc
     i+=1

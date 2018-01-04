@@ -89,10 +89,16 @@ class cluster_sample:
 
         self.ESDs[np.isnan(self.ESDs)] = 0
         self.ESDs_err[~np.isfinite(self.ESDs_err)] = 0
-        self.stack_rbin = 0.667*(rmax**3-rmin**3)/(rmax**2-rmin**2) # area-weighted average
+        self.stack_rbin = (rmax**3-rmin**3)/(rmax**2-rmin**2)*2./3. # area-weighted average
         self.stack_ESD = np.sum(self.ESDs, 0)
         self.stack_ESDerr = np.sqrt((self.ESDs_err**2.).sum(0))
         self.stack_n = (self.ESDs != 0).sum(0)
+
+    def __getitem__(self, item):
+        return self.clusters[item]
+
+    def __len__(self):
+        return self.size
 
 class cluster:
     '''
@@ -121,7 +127,7 @@ class cluster:
     da = 0*u.Mpc/u.rad
 
     # Contamination and obscuration parameters
-    n_0, r_core, r_max, r_500 = 0*u.Mpc, 0*u.Mpc, 0*u.Mpc, 0*u.Mpc
+    n_0, r_core, r_max, r_500 = 0*u.arcsec, 0*u.Mpc, 0*u.Mpc, 0*u.Mpc
 
     def __init__(self, filepath):
         from astropy.table import Table
@@ -169,14 +175,14 @@ class cluster:
         '''
 
 
-        idx = (self.m > self.mmin) & (self.m < self.mmax)
+        idx = (self.m > self.mmin) & (self.m < self.mmax) & (self.pg>0.1) & (self.delmag == 0)
         x, y, e1, e2, pg, de, m, mu = self.x[idx], self.y[idx], self.e1[idx], self.e2[idx], self.pg[idx], self.de[idx], self.m[idx], self.mu[idx]
 
         #Transform x and y in arcsec
         x = self.pixsize*(x - self.xcen)
         y = self.pixsize*(y - self.ycen)
         r = np.sqrt(x**2.+y**2.)
-        pg[pg<0.] = 0
+        #pg[pg<0.] = 0
 
 
         #weights
@@ -196,7 +202,7 @@ class cluster:
         rmax = bin_edges[1:]
 
         nbin = len(rmin)
-        rbin = 0.667*(rmax**3.-rmin**3.)/(rmax**2.-rmin**2.) # area-weighted average
+        rbin = (rmax**3.-rmin**3.)/(rmax**2.-rmin**2.)*2./3. # area-weighted average
         nbin, gtbin, gxbin, dgtbin, kbin = [np.zeros(nbin) for i in xrange(5)]
 
 
@@ -213,13 +219,13 @@ class cluster:
 
 
         if(bin_edges.unit.is_equivalent('Mpc')):
-            fcontam = self.n_0 * (1./(rbin + self.r_core) - 1./(self.r_max + self.r_core))
+            fcontam = self.n_0*self.da * (1./(rbin + self.r_core) - 1./(self.r_max + self.r_core))
             fcontam[rbin>self.r_max] = 0
             fobscured = 1+0.022/(0.14+(rbin/self.r_500)**2.)
         else:
-            fcontam = self.n_0/self.da * (1./(rbin + self.r_core/self.da) - 1./(self.r_max/self.da + self.r_core/self.da))
+            fcontam = self.n_0 * (1./(rbin + self.r_core/self.da) - 1./(self.r_max/self.da + self.r_core/self.da))
             fcontam[rbin>self.r_max/self.da] = 0
-            fobscured = 1+0.022/(0.14+(rbin/self.r_500*self.da)**2.)
+            fobscured = 1.+0.022/(0.14+(rbin/self.r_500*self.da)**2.)
 
         self.rbin = rbin
         self.gtbin = (gtbin*(fcontam*fobscured + 1)).to(1)
