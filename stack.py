@@ -3,7 +3,7 @@ from astropy import units as u
 import numpy as np
 
 CCCP = cluster_sample('data/CCCP.fits', 'data/source/')
-bin_edges = np.geomspace(.5, 5, 28)*u.Mpc
+bin_edges = np.geomspace(.5, 5, 29)*u.Mpc
 CCCP.stack_ESD(bin_edges)
 
 from matplotlib import pyplot as plt
@@ -33,5 +33,5 @@ for i in xrange(CCCP.size):
     plt.gca().set_xscale('log')
     plt.gca().set_yscale('log')
     plt.gca().set_xlim([bin_edges[0].value, bin_edges[-1].value])
-    plt.suptitle(CCCP[i].name+'profile')
+    plt.suptitle(CCCP[i].name+' profile')
     plt.savefig('output/individual/'+CCCP[i].name+'.pdf')
