@@ -5,43 +5,57 @@ from astropy.units import Quantity
 '''
     Splashback radius for KSB source catalogs
 
-    Assumes all distances to be comoving, Assumes Hoekstra+ 2015 cosmology with h=1.
+    Assumes all distances to be comoving, Hoekstra+ 2015 cosmology (h=1, O_m = 0.3, O_L = 0.7).
 '''
 
 
 class cluster_sample:
     '''
-        Load a cluster sample from directory
+        Load a cluster sample from a Table
 
 
         Parameters
         ----------
+        filepath : str
+            Path where to find the fits table for the cluster sample.
         dirpath : str
-            String of the directory where to find the fits tables for the clusters.
+            Path where to find the directory with the source catalogs in fits format.
         parallel : bool
-            If True, perform the loading using n-1 cores, where n=multiprocessing.cpu_count()-1.
+            If True, perform the loading using n-1 cores, where n=multiprocessing.cpu_count().
             Requires multiprocessing. Default value: True.
     '''
-    def __init__(self, dirpath, parallel=True):
-        import glob
 
-        filelist = glob.glob(dirpath+'/*.fits')
-        self.size = len(filelist)
-        self.clusters = []*self.size
+    filepath = None
+    size = 0
 
 
-        if(parallel):
-            from joblib import Parallel, delayed
-            import multiprocessing
-            from multiprocessing import Pool , cpu_count
-            n = cpu_count()-1
-            p = Pool(cpu_count()-1)
-            self.clusters = p.map(cluster, filelist)
-        else:
-            for i in xrange(self.size):
-                filename = filelist[i]
-                self.clusters[i] = cluster(filename)
+    def __init__(self, filepath, dirpath, parallel=True):
+        from astropy.table import Table
 
+        self.filepath = filepath
+        self.dirpath = dirpath
+        data = Table.read(filepath)
+
+        self.size = len(data)
+        self.clusters = [None]*self.size
+
+        # Load cluster catalog
+        varnames = ['r_500', 'm_500', 'beta_avg', 'z', 'da']
+
+        for varname in varnames:
+            setattr(self, varname, data[varname].quantity)
+
+        # Load sources
+        filelist = [dirpath+data['name'][i]+'.fits' for i in xrange(self.size)]
+        for i in xrange(self.size):
+            self.clusters[i] = cluster(filelist[i])
+            varnames = ['xcen', 'ycen', 'mmin', 'mmax']
+            for varname in varnames:
+                setattr(self.clusters[i], varname, data[varname][i])
+
+            varnames = ['da', 'n_0', 'r_core', 'r_max', 'r_500']
+            for varname in varnames:
+                setattr(self.clusters[i], varname, data[varname].quantity[i])
 
     def stack_ESD(self, bin_edges=None, idxlist=None):
         '''
@@ -60,35 +74,37 @@ class cluster_sample:
 
         bin_edges = Quantity(bin_edges)
         if(bin_edges.unit.is_equivalent('1')):
-            [self.clusters[i].compute_shear(bin_edges*self.clusters[i].r_d) for i in xrange(self.size)]
+            [self.clusters[i].compute_shear(bin_edges*self.r_500[i]) for i in xrange(self.size)]
         else:
             [self.clusters[i].compute_shear(bin_edges) for i in xrange(self.size)]
 
-        self.ESDs, self.ESDs_err = np.zeros([self.size, len(bin_edges)-1]), np.zeros([self.size, len(bin_edges)-1])
+        self.ESDs, self.ESDs_err = np.zeros([self.size, len(bin_edges)-1])*u.Mpc/u.Msun/u.rad, np.zeros([self.size, len(bin_edges)-1])*u.Mpc/u.Msun/u.rad
         for i in xrange(self.size):
             if(i in idxlist):
-                self.ESDs[i] = self.clusters[i].gtbin*self.clusters[i].da/self.clusters[i].beta_avg/self.clusters[i].m_d
-                self.ESDs_err[i] = self.clusters[i].dgtbin*self.clusters[i].da/self.clusters[i].beta_avg/self.clusters[i].m_d
+                self.ESDs[i] = self.clusters[i].gtbin*self.da[i]/self.beta_avg[i]/self.m_500[i]
+                self.ESDs_err[i] = self.clusters[i].dgtbin*self.da[i]/self.beta_avg[i]/self.m_500[i]
 
         rmin = bin_edges[:-1]
         rmax = bin_edges[1:]
 
+        self.ESDs[np.isnan(self.ESDs)] = 0
+        self.ESDs_err[~np.isfinite(self.ESDs_err)] = 0
         self.stack_rbin = 0.667*(rmax**3-rmin**3)/(rmax**2-rmin**2) # area-weighted average
-        self.stack_ESD = self.ESDs.sum(0)
+        self.stack_ESD = np.sum(self.ESDs, 0)
         self.stack_ESDerr = np.sqrt((self.ESDs_err**2.).sum(0))
         self.stack_n = (self.ESDs != 0).sum(0)
 
 class cluster:
     '''
-        Load a cluster from file
+        Load a source catalog for a cluster and compute tangential and cross component azimuthally averaged shear.
 
         Parameters
         ----------
         filepath : str
-            Path of the astropy table file
+            Path of the source catalog
 
-        rbin : ndarray
-            Radial bins to compute azimuthally averaged shear components around the center of the cluster
+        rbin : Quantity
+            Radial bins to compute the azimuthally averaged shear components around the center of the cluster, can be computed in physical units or in angular units
         gtbin : ndarray
             Tangential components computed using rbin
         gxbin : ndarray
@@ -96,38 +112,39 @@ class cluster:
         dgtbin : ndarray
             Error on the tangential component
     '''
-    metavar_list = ['name', 'sample', 'pixscale', 'z', 'xcen', 'ycen', 'mmin', 'mmax', 'da', 'beta_avg', 'r_d', 'r_d_high', 'r_d_low', 'm_d', 'm_d_high', 'm_d_low', 'mproj_d','dmproj_d']
-    column_list = ['x', 'y', 'm', 'e1', 'e2', 'de', 'pg', 'mu', 'rh', 'nu', 'ncoin', 'delmag']
+
+    # Image data
+    pixsize = None
+
+    # Cluster data for shear
+    xcen, ycen, mmin, mmax = [None for i in xrange(4)]
+    da = 0*u.Mpc/u.rad
+
+    # Contamination and obscuration parameters
+    n_0, r_core, r_max, r_500 = 0*u.Mpc, 0*u.Mpc, 0*u.Mpc, 0*u.Mpc
 
     def __init__(self, filepath):
         from astropy.table import Table
 
-        data_table = Table.read(filepath)
-        data_table.meta =  {k.lower(): v for k, v in data_table.meta.items()}
         self.rbin = None
         self.gtbin = None
         self.gxbin = None
+
+        data_table = Table.read(filepath)
+
+        #Load metadata
+        if(data_table.meta['PIXUNIT']=='arcsec'):
+            self.pixsize = data_table.meta['PIXSIZE'] * u.arcsec
+
+        self.name = data_table.meta['NAME']
+        self.sample = data_table.meta['SAMPLE']
         self.filepath = filepath
 
-        #Load metavariables
-        for metaname in data_table.meta:
-            try:
-                i = self.metavar_list.index(metaname)
-                setattr(self, metaname, data_table.meta[metaname])
-                i+=1
-            except ValueError:
-                print('Metavariable not recognized:' + str(metaname))
-                i+=1
-                continue
-
-        self.pixscale = self.pixscale * u.arcsec
-        self.da = self.da * u.Gpc / u.rad
-        self.r_d = self.r_d * u.Mpc
-
         #Load columns
+        column_list = ['x', 'y', 'm', 'e1', 'e2', 'de', 'pg', 'mu', 'nu', 'delmag']
         for colname in data_table.colnames:
             try:
-                i = self.column_list.index(colname)
+                i = column_list.index(colname)
                 setattr(self, colname, data_table[colname].quantity)
                 i+=1
             except ValueError:
@@ -152,12 +169,12 @@ class cluster:
         '''
 
 
-        idx = (self.m > self.mmin) & (self.m < self.mmax) #& (delmag==0)
+        idx = (self.m > self.mmin) & (self.m < self.mmax)
         x, y, e1, e2, pg, de, m, mu = self.x[idx], self.y[idx], self.e1[idx], self.e2[idx], self.pg[idx], self.de[idx], self.m[idx], self.mu[idx]
 
         #Transform x and y in arcsec
-        x = self.pixscale*(x - self.xcen)
-        y = self.pixscale*(y - self.ycen)
+        x = self.pixsize*(x - self.xcen)
+        y = self.pixsize*(y - self.ycen)
         r = np.sqrt(x**2.+y**2.)
         pg[pg<0.] = 0
 
@@ -191,14 +208,33 @@ class cluster:
             dgtbin[i] = np.sqrt(1./np.sum(w[idx]))
             kbin[i] = np.sum(mu[idx]*w[idx])/np.sum(w[idx])
 
+        gtbin = gtbin/kbin
+        gxbin = gxbin/kbin
+
+
+        if(bin_edges.unit.is_equivalent('Mpc')):
+            fcontam = self.n_0 * (1./(rbin + self.r_core) - 1./(self.r_max + self.r_core))
+            fcontam[rbin>self.r_max] = 0
+            fobscured = 1+0.022/(0.14+(rbin/self.r_500)**2.)
+        else:
+            fcontam = self.n_0/self.da * (1./(rbin + self.r_core/self.da) - 1./(self.r_max/self.da + self.r_core/self.da))
+            fcontam[rbin>self.r_max/self.da] = 0
+            fobscured = 1+0.022/(0.14+(rbin/self.r_500*self.da)**2.)
+
         self.rbin = rbin
-        self.gtbin = gtbin/kbin
-        self.gxbin = gxbin/kbin
-        self.dgtbin = dgtbin
+        self.gtbin = (gtbin*(fcontam*fobscured + 1)).to(1)
+        self.gxbin = gxbin
+        self.dgtbin = (dgtbin*(fcontam*fobscured + 1)).to(1)
+        self.fcontam = fcontam.to(1)
         self.nbin = nbin
 
     def print_info(self):
+        '''
+            Print cluster info
+        '''
         print 'Cluster name: '+self.name
         print 'Source catalog: '+self.filepath
-        print 'Pixel position of cluster center: '+self.xcen+', '+self.ycen
-        print 'Full Metavariable: '+self.meta
+        print 'Pixel position of cluster center: '+str(self.xcen)+', '+str(self.ycen)
+        print 'Contamination parameters (n_0, r_core, r_max, r_500): '+str(n_0)+' '+str(r_core)+' '+str(r_max)+' '+str(r_500)
+        print 'Angular diameter distance (h_100=1, O_m = 0.3, O_L = 0.7): '+str(self.da)
+        print 'Magnitude range: ('+str(mmin)+', '+str(mmax)+')'
