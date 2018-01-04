@@ -16,6 +16,4 @@ You can access every method's docstring by using the help() function in python.
 
 ## References
 
-* Contigiani+ (in prep.)
-
 * Henk Hoekstra, Ricardo Herbonnet, Adam Muzzin, Arif Babul, Andi Mahdavi, Massimo Viola, Marcello Cacciato, 2015, MNRAS ([arxiv](https://arxiv.org/abs/1502.01883))
