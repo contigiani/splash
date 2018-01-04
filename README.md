@@ -8,7 +8,9 @@ Collection of scripts to detect the splashback radius in Galaxy clusters using w
 
 * stack.py : plot the stacked profile of a cluster sample, based on cluster_sample.
 
-* reformat.py : saves source cats in a decent format.
+* comparison.py : plot the angular profiles of a cluster sample, compares to known results.
+
+* reformat.py : save source cats in a decent format.
 
 ## Documentation
 
