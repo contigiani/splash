@@ -101,9 +101,12 @@ ENV/
 .mypy_cache/
 
 
-#Data
+# Data
 data/*
 
-#MacOS
+# MacOS
 ._*
 .DS_Store
+
+# Plots
+*.pdf
