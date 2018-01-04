@@ -1,6 +1,6 @@
 # splash
 
-Collection of scripts to detect the splashback radius in Galaxy clusters.
+Collection of scripts to detect the splashback radius in Galaxy clusters using weak lensing data.
 
 ## Files
 
