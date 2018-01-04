@@ -103,6 +103,7 @@ ENV/
 
 # Data
 data/*
+output/*
 
 # MacOS
 ._*
