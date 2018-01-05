@@ -16,7 +16,7 @@ for i in xrange(CCCP.size):
     plt.errorbar(CCCP.stack_rbin.value, CCCP.stack_rbin.value*(ESDs[i]).value, c='0.5', zorder=1)# yerr=(CCCP.ESDs_err[i]).value)
 
 plt.xlabel(r'$R$ $(h^{-1} Mpc)$')
-plt.ylabel(r'$\Delta \Sigma (R)$ ($h^{-1}$ '+str(CCCP.ESDs.unit*u.rad)+')')
+plt.ylabel(r'$\Delta \Sigma (R)$ ($h^{-1}$ '+str(CCCP.ESDs.unit/u.rad)+')')
 plt.gca().set_xscale('log')
 plt.gca().set_yscale('log')
 plt.gca().set_xlim([bin_edges[0].value, bin_edges[-1].value])
