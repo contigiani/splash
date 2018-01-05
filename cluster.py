@@ -68,7 +68,7 @@ class cluster_sample:
             idxlist : list
                 Indices of the array to stack. Defaults to stacking all clusters.
         '''
-
+        import astropy.constants as const
         if(idxlist == None):
             idxlist = range(self.size)
 
@@ -78,11 +78,11 @@ class cluster_sample:
         else:
             [self.clusters[i].compute_shear(bin_edges) for i in xrange(self.size)]
 
-        self.ESDs, self.ESDs_err = np.zeros([self.size, len(bin_edges)-1])/u.Mpc/u.Msun*u.rad, np.zeros([self.size, len(bin_edges)-1])/u.Mpc/u.Msun*u.rad
+        self.ESDs, self.ESDs_err = np.zeros([self.size, len(bin_edges)-1])/u.Mpc/u.Mpc, np.zeros([self.size, len(bin_edges)-1])/u.Mpc/u.Mpc
         for i in xrange(self.size):
             if(i in idxlist):
-                self.ESDs[i] = self.clusters[i].gtbin/self.da[i]/self.beta_avg[i]/self.m_500[i]
-                self.ESDs_err[i] = self.clusters[i].dgtbin/self.da[i]/self.beta_avg[i]/self.m_500[i]
+                self.ESDs[i] = self.clusters[i].gtbin/self.da[i]/self.beta_avg[i]/self.m_500[i]*(const.c**2.)/4./np.pi/const.G/u.rad
+                self.ESDs_err[i] = self.clusters[i].dgtbin/self.da[i]/self.beta_avg[i]/self.m_500[i]*(const.c**2.)/4./np.pi/const.G/u.rad
 
         rmin = bin_edges[:-1]
         rmax = bin_edges[1:]
