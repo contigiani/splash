@@ -2,10 +2,14 @@ from astropy import units as u
 import numpy as np
 import scipy.integrate as integrate
 
+'''
+    DK14 profile, see Diemer&Kravtsov 2014, Baxter+ 2017
+'''
+
 
 def DK14(r, params, h_max):
     '''
-        DK14 profile, see Diemer&Kravtsov 2014, Baxter+ 2017
+        Returns the line of sight integral of the 3D profile between -hmax and +hmax, evaluated at r. 
     '''
     result = np.zeros(len(r))
 
