@@ -111,3 +111,6 @@ output/*
 
 # Plots
 *.pdf
+
+# Notebooks
+*.ipynb

@@ -78,21 +78,21 @@ class cluster_sample:
         else:
             [self.clusters[i].compute_shear(bin_edges) for i in xrange(self.size)]
 
-        self.ESDs, self.ESDs_err = np.zeros([self.size, len(bin_edges)-1])*u.Mpc/u.Msun/u.rad, np.zeros([self.size, len(bin_edges)-1])*u.Mpc/u.Msun/u.rad
+        self.ESDs, self.ESDs_err = np.zeros([self.size, len(bin_edges)-1])/u.Mpc/u.Msun*u.rad, np.zeros([self.size, len(bin_edges)-1])/u.Mpc/u.Msun*u.rad
         for i in xrange(self.size):
             if(i in idxlist):
-                self.ESDs[i] = self.clusters[i].gtbin*self.da[i]/self.beta_avg[i]/self.m_500[i]
-                self.ESDs_err[i] = self.clusters[i].dgtbin*self.da[i]/self.beta_avg[i]/self.m_500[i]
+                self.ESDs[i] = self.clusters[i].gtbin/self.da[i]/self.beta_avg[i]/self.m_500[i]
+                self.ESDs_err[i] = self.clusters[i].dgtbin/self.da[i]/self.beta_avg[i]/self.m_500[i]
 
         rmin = bin_edges[:-1]
         rmax = bin_edges[1:]
 
         self.ESDs[np.isnan(self.ESDs)] = 0
         self.ESDs_err[~np.isfinite(self.ESDs_err)] = 0
-        self.stack_rbin = (rmax**3-rmin**3)/(rmax**2-rmin**2)*2./3. # area-weighted average
-        self.stack_ESD = np.sum(self.ESDs, 0)
-        self.stack_ESDerr = np.sqrt((self.ESDs_err**2.).sum(0))
         self.stack_n = (self.ESDs != 0).sum(0)
+        self.stack_rbin = (rmax**3-rmin**3)/(rmax**2-rmin**2)*2./3. # area-weighted average
+        self.stack_ESD = np.sum(self.ESDs, 0)/self.stack_n
+        self.stack_ESDerr = np.sqrt((self.ESDs_err**2.).sum(0))/self.stack_n
 
     def __getitem__(self, item):
         return self.clusters[item]
