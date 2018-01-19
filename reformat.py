@@ -13,7 +13,7 @@ data_planck = Table.read('data/original/m500_mega_planck.dat', format='ascii')
 
 z, xcen, ycen, mmin, mmax, da, beta_avg, r_500,  m_500, n_0, r_core, r_max = [np.zeros(len(data)) for i in xrange(12)]
 column_list = ['name', 'z', 'xcen', 'ycen', 'mmin', 'mmax', 'da', 'beta_avg', 'r_500',  'm_500', 'n_0', 'r_core', 'r_max']
-source_column_list = ['x', 'y', 'm', 'e1', 'e2', 'de', 'pg', 'mu', 'delmag']
+source_column_list = ['x', 'y', 'm', 'e1', 'e2', 'de', 'pg', 'mu', 'delmag', 'e1r', 'e2r']
 meta_var = {'details' : 'CCCP sample - Hoekstra+ 2015, Planck r_500, m_500'}
 name = [None]*len(data)
 da, r_500, m_500, n_0, r_core, r_max = da*u.Gpc/u.rad, r_500*u.Mpc, m_500*u.Msun, n_0*u.arcsec, r_core*u.Mpc, r_max*u.Mpc
@@ -40,9 +40,12 @@ for cluster_name in data['name_cl']:
 
     # LOAD SOURCE CATALOG
     data_source = np.loadtxt('data/original/source/mos_'+cluster_name+'.cat')
+    data_source_extra = np.loadtxt('data/original/source/mos_add_'+cluster_name+'.cat')
 
     source_meta_var = {'NAME' : cluster_name, 'SAMPLE' : 'CCCP', 'PIXSIZE' : 0.186, 'PIXUNIT' : 'arcsec'}
-    Table_source = Table([data_source[:, 0], data_source[:, 1], data_source[:,2], data_source[:, 3], data_source[:,4], data_source[:, 5], data_source[:,6], data_source[:, 7], data_source[:,11]], names=source_column_list, meta=source_meta_var)
+    Table_source = Table([data_source[:, 0], data_source[:, 1], data_source[:,2], data_source[:, 3], data_source[:,4], \
+                        data_source[:, 5], data_source[:,6], data_source[:, 7], data_source[:,11], \
+                        data_source_extra[:, 0], data_source_extra[:, 1]], names=source_column_list, meta=source_meta_var)
     Table_source.write('data/source/'+cluster_name+'.fits', overwrite=True)
 
 #SAVE SAMPLE FITS TABLE

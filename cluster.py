@@ -57,7 +57,7 @@ class cluster_sample:
             for varname in varnames:
                 setattr(self.clusters[i], varname, data[varname].quantity[i])
 
-    def stack_ESD(self, bin_edges=None, idxlist=None):
+    def stack_ESD(self, bin_edges=None, idxlist=None, raw=False):
         '''
             Stack scaled ESDs
 
@@ -67,6 +67,8 @@ class cluster_sample:
                 Edges of the azimuthal bins to average over. Can be either a distance, comoving or
             idxlist : list
                 Indices of the array to stack. Defaults to stacking all clusters.
+            raw : bool
+                Compute the
         '''
         import astropy.constants as const
         if(idxlist == None):
@@ -74,9 +76,9 @@ class cluster_sample:
 
         bin_edges = Quantity(bin_edges)
         if(bin_edges.unit.is_equivalent('1')):
-            [self.clusters[i].compute_shear(bin_edges*self.r_500[i]) for i in xrange(self.size)]
+            [self.clusters[i].compute_shear(bin_edges*self.r_500[i], raw) for i in xrange(self.size)]
         else:
-            [self.clusters[i].compute_shear(bin_edges) for i in xrange(self.size)]
+            [self.clusters[i].compute_shear(bin_edges, raw) for i in xrange(self.size)]
 
         self.ESDs, self.ESDs_err = np.zeros([self.size, len(bin_edges)-1])/u.Mpc/u.Mpc, np.zeros([self.size, len(bin_edges)-1])/u.Mpc/u.Mpc
         for i in xrange(self.size):
@@ -89,10 +91,10 @@ class cluster_sample:
 
         self.ESDs[np.isnan(self.ESDs)] = 0
         self.ESDs_err[~np.isfinite(self.ESDs_err)] = 0
-        self.stack_n = (self.ESDs != 0).sum(0)
-        self.stack_rbin = (rmax**3-rmin**3)/(rmax**2-rmin**2)*2./3. # area-weighted average
-        self.stack_ESD = np.sum(self.ESDs, 0)/self.stack_n
-        self.stack_ESDerr = np.sqrt((self.ESDs_err**2.).sum(0))/self.stack_n
+        self.n = (self.ESDs != 0).sum(0)
+        self.rbin = (rmax**3-rmin**3)/(rmax**2-rmin**2)*2./3. # area-weighted average
+        self.ESD = np.sum(self.ESDs, 0)/self.n
+        self.ESDerr = np.sqrt((self.ESDs_err**2.).sum(0))/self.n
 
     def __getitem__(self, item):
         return self.clusters[item]
@@ -147,7 +149,7 @@ class cluster:
         self.filepath = filepath
 
         #Load columns
-        column_list = ['x', 'y', 'm', 'e1', 'e2', 'de', 'pg', 'mu', 'nu', 'delmag']
+        column_list = ['x', 'y', 'm', 'e1', 'e2', 'de', 'pg', 'mu', 'nu', 'delmag', 'e1r', 'e2r']
         for colname in data_table.colnames:
             try:
                 i = column_list.index(colname)
@@ -159,7 +161,7 @@ class cluster:
                 continue
 
 
-    def compute_shear(self, bin_edges=None):
+    def compute_shear(self, bin_edges=None, raw=False):
         '''
             Compute tangential and cross component of the shear around the
             cluster center. The results are stored in gtbin and gxbin, the error
@@ -170,13 +172,23 @@ class cluster:
             Parameters
             ----------
             bin_edges : Quantity or float
-                 Array or the bin edges. For bins of size N,
-                 gtbin and gxbin will have size N-1.
+                Array or the bin edges. For bins of size N,
+                gtbin and gxbin will have size N-1.
+            raw : bool
+                Load raw ellipticities instead of the PSF corrected ones.
         '''
 
 
         idx = (self.m > self.mmin) & (self.m < self.mmax) & (self.pg>0.1) & (self.delmag == 0)
-        x, y, e1, e2, pg, de, m, mu = self.x[idx], self.y[idx], self.e1[idx], self.e2[idx], self.pg[idx], self.de[idx], self.m[idx], self.mu[idx]
+
+        x, y, pg, de, m, mu = self.x[idx], self.y[idx], self.pg[idx], self.de[idx], self.m[idx], self.mu[idx]
+
+        if(raw):
+            e1, e2 =  self.e1r[idx], self.e2r[idx]
+            self.raw = True
+        else:
+            e1, e2 =  self.e1[idx], self.e2[idx]
+            self.raw = False
 
         #Transform x and y in arcsec
         x = self.pixsize*(x - self.xcen)
@@ -244,3 +256,59 @@ class cluster:
         print 'Contamination parameters (n_0, r_core, r_max, r_500): '+str(n_0)+' '+str(r_core)+' '+str(r_max)+' '+str(r_500)
         print 'Angular diameter distance (h_100=1, O_m = 0.3, O_L = 0.7): '+str(self.da)
         print 'Magnitude range: ('+str(mmin)+', '+str(mmax)+')'
+
+    def plot_sources(self, radius=None):
+        '''
+            Plot the source catalog and plots concentric circles.
+
+            Parameters
+            ----------
+                radius : Quantity or nd.array or float
+                    radius (or a set of radii) of the circle centered on the
+                    cluster center. Allowed units are length, angle or pixel size.
+        '''
+        from matplotlib import pyplot as plt
+
+        plt.suptitle(self.name+r'  $r_{500}$ = '+str(self.r_500)+' h$^{-1}$')
+        if(radius is not None):
+            radius = Quantity(radius)
+            if(radius.unit.is_equivalent('1')):
+                # Radius is in pixel
+                radius = radius.value
+            if(radius.unit.is_equivalent('arcsec')):
+                # Radius is in arcsec
+                radius = radius.to('arcsec')
+                x, y, xc, yc = (self.x*self.pixsize).to('arcsec').value, \
+                            (self.y*self.pixsize).to('arcsec').value, \
+                            (self.xcen*self.pixsize).to('arcsec').value, \
+                            (self.ycen*self.pixsize).to('arcsec').value
+                unit = 'arcsec'
+            if(radius.unit.is_equivalent('Mpc')):
+                #Radius is in h-1 Mpc
+                radius = radius.to('Mpc').value
+                x, y, xc, yc = (self.x*self.da*self.pixsize).to('Mpc').value, \
+                            (self.y*self.da*self.pixsize).to('Mpc').value, \
+                            (self.xcen*self.da*self.pixsize).to('Mpc').value, \
+                            (self.ycen*self.da*self.pixsize).to('Mpc').value
+                unit = 'h-1 Mpc'
+
+            plt.scatter(x, y, marker='.', c='k', zorder=1)
+            plt.scatter(xc, yc, marker='*', c='r', s=100, zorder=100)
+            try:
+                circle = [None]*len(radius)
+                for i in xrange(len(radius)):
+                    circle[i] = plt.Circle((xc, yc), radius[i], color='r', fill=False, zorder=200)
+                    plt.gca().add_artist(circle[i])
+            except TypeError:
+                circle = plt.Circle((xc, yc), radius, color='r', fill=False, zorder=200)
+                plt.gca().add_artist(circle)
+
+            plt.gca().set_xlabel('x ('+unit+')')
+            plt.gca().set_ylabel('y ('+unit+')')
+
+        else:
+
+            plt.scatter(self.x, self.y, marker='.', c='k', zorder=1)
+            plt.scatter(self.xcen, self.ycen, marker='*', c='r', s=100, zorder=100)
+            plt.gca().set_xlabel('x')
+            plt.gca().set_ylabel('y')
