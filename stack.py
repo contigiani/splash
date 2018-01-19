@@ -4,7 +4,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 CCCP = cluster_sample('data/CCCPhighz.fits', 'data/source/')
-bin_edges = np.geomspace(.5, 7, 32)*u.Mpc #bin_edges = np.geomspace(.5, 5., 19)*u.Mpc
+bin_edges = np.geomspace(.5, 5., 19)*u.Mpc #bin_edges = np.geomspace(.5, 7, 32)*u.Mpc
 CCCP.stack_ESD(bin_edges)
 
 plt.errorbar(CCCP.stack_rbin.value, (CCCP.stack_ESD).value, yerr=(CCCP.stack_ESDerr).value, ecolor='#dd0f0f', color='#dd0f0f', lw=4, zorder=100, fmt='o', mew=0)
