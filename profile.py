@@ -7,23 +7,24 @@ import scipy.integrate as integrate
 '''
 
 
-def DK14(r, params, h_max):
+def DK14(r, params, h_max, f_t=True):
     '''
-        Returns the line of sight integral of the 3D profile between -hmax and +hmax, evaluated at r. 
+        Returns the line of sight integral of the 3D profile between -hmax and +hmax, evaluated at r.
     '''
     result = np.zeros(len(r))
 
     for i in xrange(len(r)):
-        rho_temp = lambda h: rho(np.sqrt(r[i]**2.+h**2.), params)
+        rho_temp = lambda h: rho(np.sqrt(r[i]**2.+h**2.), params, f_t)
         result[i] = integrate.quad(rho_temp, -h_max, h_max)[0]
 
     return result
 
-def rho(r, params):
+def rho(r, params, f_t):
     rho_s, r_s, alpha, r_t, beta, gamma, rho_0, s_e = params
-
-    return rho_Ein(r, [rho_s, r_s, alpha])*f_trans(r, [r_t, beta, gamma])+rho_infall(r, [rho_0, s_e])
-
+    if(f_t):
+        return rho_Ein(r, [rho_s, r_s, alpha])*f_trans(r, [r_t, beta, gamma])+rho_infall(r, [rho_0, s_e])
+    else:
+        return rho_Ein(r, [rho_s, r_s, alpha])+rho_infall(r, [rho_0, s_e])
 def rho_Ein(r, params):
     rho_s, r_s, alpha = params
 
