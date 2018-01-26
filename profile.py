@@ -7,24 +7,42 @@ import scipy.integrate as integrate
 '''
 
 
-def DK14(r, params, h_max, f_t=True):
+def DK14(r, params, h_max, mode=0):
     '''
         Returns the line of sight integral of the 3D profile between -hmax and +hmax, evaluated at r.
+
+        Parameters
+        ----------
+        mode : int
+            One of 0, 1, 2, 3. Corresponding to:
+            0: yes infall, yes f_trans (requires 8 parameters)
+            1: yes infall, no f_trans (requires 5 parameters)
+            2: no infall, yes f_trans (requires 6 parameters)
+            3: no infall, no f_trans (requires 3 parameters)
+
     '''
     result = np.zeros(len(r))
 
     for i in xrange(len(r)):
-        rho_temp = lambda h: rho(np.sqrt(r[i]**2.+h**2.), params, f_t)
+        rho_temp = lambda h: rho(np.sqrt(r[i]**2.+h**2.), params, mode)
         result[i] = integrate.quad(rho_temp, -h_max, h_max)[0]
 
     return result
 
-def rho(r, params, f_t):
-    rho_s, r_s, alpha, r_t, beta, gamma, rho_0, s_e = params
-    if(f_t):
+def rho(r, params, mode):
+    if(mode == 0):
+        rho_s, r_s, alpha, r_t, beta, gamma, rho_0, s_e  = params
         return rho_Ein(r, [rho_s, r_s, alpha])*f_trans(r, [r_t, beta, gamma])+rho_infall(r, [rho_0, s_e])
-    else:
+    if(mode == 1):
+        rho_s, r_s, alpha, rho_0, s_e = params
         return rho_Ein(r, [rho_s, r_s, alpha])+rho_infall(r, [rho_0, s_e])
+    if(mode==2):
+        rho_s, r_s, alpha, r_t, beta, gamma = params
+        return rho_Ein(r, [rho_s, r_s, alpha])*f_trans(r, [r_t, beta, gamma])
+    if(mode==3):
+        rho_s, r_s, alpha = params
+        return rho_Ein(r, [rho_s, r_s, alpha])
+
 def rho_Ein(r, params):
     rho_s, r_s, alpha = params
 
