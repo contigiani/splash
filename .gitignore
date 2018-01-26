@@ -114,3 +114,9 @@ output/*
 
 # Notebooks
 *.ipynb
+
+# emcee module
+emcee/*
+
+#Duplicates
+*_2.py
