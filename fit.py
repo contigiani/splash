@@ -11,7 +11,7 @@ import numpy as np
 
 chain_name = 'wsplash'
 max_n = 10000
-n_cores = 55
+n_cores = 60
 
 autocorr = np.empty(max_n)
 filename = "output/chains/"+chain_name+'.h5'
@@ -24,6 +24,8 @@ x = CCCP.rbin.value
 y = CCCP.ESD.value
 yerr = CCCP.ESDerr.value
 
+def normal(x, c, s):
+    return -((x-c)**2.)/2./(s**2.)
 
 
 if(chain_name=='wsplash'):
@@ -34,14 +36,17 @@ if(chain_name=='wsplash'):
 
 
     def lnpost(params, x, y, yerr):
-        rho_s, r_s, alpha, rho_0, r_t, beta, gamma, s_e = params
-        if(rho_s > 0 and r_s > 0 and alpha > 0 and r_t>0 and beta > 0 and gamma > 0 and rho_0 > 0 and s_e > 0):
-            return lnlike(params, x, y, yerr)
+        rho_s, r_s, logalpha, r_t, logbeta, loggamma, rho_0, s_e = params
+        if((0.<rho_s<1.) and (0 < rho_0 < 1.) and (0.1 < r_s < 5) and (0.1<r_t<5) and (1<s_e<10)):
+            return lnlike(params, x, y, yerr) + \
+                    normal(logalpha, np.log10(0.2), 0.6) +\
+                    normal(logbeta, np.log10(4), 0.2) +\
+                    normal(loggamma, np.log10(6), 0.2)
         return -np.inf
 
 
     ndim, nwalkers = 8, 100
-    pos = [[0.02, 2.3, 0.25, 1., 4., 6.,0.01, 4] + 1e-4*np.random.randn(ndim) for i in range(nwalkers)]
+    pos = [[0.07, 2.3, np.log10(0.25), 1., np.log10(4.), np.log10(6.), 0.01, 4.] + 5e-3*np.random.randn(ndim) for i in range(nwalkers)]
     backend = emcee.backends.HDFBackend(filename)
     first_time = False
 
@@ -68,9 +73,9 @@ if(chain_name == 'wosplash'):
 
 
     def lnpost(params, x, y, yerr):
-        rho_s, r_s, alpha, rho_0, s_e = params
-        if(rho_s > 0 and r_s > 0 and alpha > 0 and rho_0 > 0 and s_e > 0):
-            return lnlike(params, x, y, yerr)
+        rho_s, r_s, logalpha, rho_0, s_e = params
+        if((0.<rho_s<1.) and (0 < rho_0 < 1.) and (0.1 <=r_s <=5.) and (0.1<=r_t<=5.) and (1.<=s_e<=10.)):
+            return lnlike(params, x, y, yerr) + normal(logalpha, np.log10(0.2), 0.6)
         return -np.inf
 
 

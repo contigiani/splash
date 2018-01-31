@@ -31,26 +31,27 @@ def DK14(r, params, h_max, mode=0):
 
 def rho(r, params, mode):
     if(mode == 0):
-        rho_s, r_s, alpha, r_t, beta, gamma, rho_0, s_e  = params
-        return rho_Ein(r, [rho_s, r_s, alpha])*f_trans(r, [r_t, beta, gamma])+rho_infall(r, [rho_0, s_e])
+        rho_s, r_s, logalpha, r_t, logbeta, loggamma, rho_0, s_e  = params
+        return rho_Ein(r, [rho_s, r_s, logalpha])*f_trans(r, [r_t, logbeta, loggamma])+rho_infall(r, [rho_0, s_e])
     if(mode == 1):
-        rho_s, r_s, alpha, rho_0, s_e = params
-        return rho_Ein(r, [rho_s, r_s, alpha])+rho_infall(r, [rho_0, s_e])
+        rho_s, r_s, logalpha, rho_0, s_e = params
+        return rho_Ein(r, [rho_s, r_s, logalpha])+rho_infall(r, [rho_0, s_e])
     if(mode==2):
-        rho_s, r_s, alpha, r_t, beta, gamma = params
-        return rho_Ein(r, [rho_s, r_s, alpha])*f_trans(r, [r_t, beta, gamma])
+        rho_s, r_s, logalpha, r_t, logbeta, loggamma = params
+        return rho_Ein(r, [rho_s, r_s, logalpha])*f_trans(r, [r_t, logbeta, loggamma])
     if(mode==3):
-        rho_s, r_s, alpha = params
-        return rho_Ein(r, [rho_s, r_s, alpha])
+        rho_s, r_s, logalpha = params
+        return rho_Ein(r, [rho_s, r_s, logalpha])
 
 def rho_Ein(r, params):
-    rho_s, r_s, alpha = params
-
+    rho_s, r_s, logalpha = params
+    alpha = (10.**logalpha)
     return rho_s * np.exp(-2./alpha*( (r/r_s)**alpha-1.) )
 
 def f_trans(r, params):
-    r_t, beta, gamma = params
-
+    r_t, logbeta, loggamma = params
+    beta = alpha = (10.**logbeta)
+    gamma = alpha = (10.**loggamma)
     return (1.+(r/r_t)**beta)**(-gamma/beta)
 
 def rho_infall(r, params):
