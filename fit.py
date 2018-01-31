@@ -45,7 +45,7 @@ if(chain_name=='wsplash'):
         return -np.inf
 
 
-    ndim, nwalkers = 8, 100
+    ndim, nwalkers = 8, 200
     pos = [[0.07, 2.3, np.log10(0.25), 1., np.log10(4.), np.log10(6.), 0.01, 4.] + 5e-3*np.random.randn(ndim) for i in range(nwalkers)]
     backend = emcee.backends.HDFBackend(filename)
     first_time = False
@@ -74,12 +74,12 @@ if(chain_name == 'wosplash'):
 
     def lnpost(params, x, y, yerr):
         rho_s, r_s, logalpha, rho_0, s_e = params
-        if((0.<rho_s<1.) and (0 < rho_0 < 1.) and (0.1 <=r_s <=5.) and (0.1<=r_t<=5.) and (1.<=s_e<=10.)):
+        if((0.<rho_s<1.) and (0 < rho_0 < 1.) and (0.1 <=r_s <=5.) and (1.<=s_e<=10.)):
             return lnlike(params, x, y, yerr) + normal(logalpha, np.log10(0.2), 0.6)
         return -np.inf
 
 
-    ndim, nwalkers = 5, 100
+    ndim, nwalkers = 5, 200
     pos = [[0.02, 2.3, 0.25 ,0.01, 4] + 1e-4*np.random.randn(ndim) for i in range(nwalkers)]
     backend = emcee.backends.HDFBackend(filename)
     first_time = False
