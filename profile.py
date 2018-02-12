@@ -6,10 +6,9 @@ import scipy.integrate as integrate
     DK14 profile, see Diemer&Kravtsov 2014, Baxter+ 2017
 '''
 
-
-def DK14(r, params, h_max, mode=0):
+def DK14(R, params, h_max, R_min, mode=0):
     '''
-        Returns the line of sight integral of the 3D profile between -hmax and +hmax, evaluated at r.
+        Return the excess surface density at r
 
         Parameters
         ----------
@@ -19,8 +18,24 @@ def DK14(r, params, h_max, mode=0):
             1: yes infall, no f_trans (requires 5 parameters)
             2: no infall, yes f_trans (requires 6 parameters)
             3: no infall, no f_trans (requires 3 parameters)
-
     '''
+    sigmatemp = lambda x: DK14_S(x, params, h_max, mode)
+    result = np.zeros(len(R))
+
+    mu, rho_s, r_s, logalpha, r_t, logbeta, loggamma, rho_0, s_e  = params
+
+    params = [rho_s, r_s, logalpha, r_t, logbeta, loggamma, rho_0, s_e]
+    for i in xrange(len(R)):
+        result[i] = 2.*(mu+integrate.quad(sigmatemp, R_min, R[i])[0])/R[i]/R[i] - sigmatemp(R[i])
+
+    return result
+
+def DK14_S(r, params, h_max, mode):
+    '''
+        Returns the line of sight integral of the 3D profile between -hmax and +hmax, evaluated at r.
+    '''
+
+    r = np.atleast_1d(r)
     result = np.zeros(len(r))
 
     for i in xrange(len(r)):
@@ -57,5 +72,4 @@ def f_trans(r, params):
 def rho_infall(r, params):
     rho_0, s_e = params
     r_0 = 1.5
-
     return rho_0*(r/r_0)**(-s_e)
