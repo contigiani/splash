@@ -19,7 +19,7 @@ def DK14(R, params, h_max, R_min, mode=0):
             2: no infall, yes f_trans (requires 6 parameters)
             3: no infall, no f_trans (requires 3 parameters)
     '''
-    sigmatemp = lambda x: DK14_S(x, params, h_max, mode)
+    sigmatemp = lambda x: x*DK14_S(x, params, h_max, mode)
     result = np.zeros(len(R))
 
     mu, rho_s, r_s, logalpha, r_t, logbeta, loggamma, rho_0, s_e  = params
