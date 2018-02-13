@@ -31,7 +31,7 @@ def normal(x, c, s):
 if(chain_name=='wsplash'):
 
     def lnlike(params, x, y, yerr):
-        model = DK14(x, params, 0.3, 40, mode=0)
+        model = DK14(x, params, 40,0.3, mode=0)
         return -0.5*(np.sum(((y-model)/yerr)**2.))
 
 
