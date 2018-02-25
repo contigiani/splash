@@ -53,11 +53,11 @@ class cluster_sample:
             for varname in varnames:
                 setattr(self.clusters[i], varname, data[varname][i])
 
-            varnames = ['da', 'n_0', 'r_core', 'r_max', 'r_500']
+            varnames = ['da', 'n_0', 'r_core', 'r_max', 'r_500', 'z']
             for varname in varnames:
                 setattr(self.clusters[i], varname, data[varname].quantity[i])
 
-    def stack_ESD(self, bin_edges=None, idxlist=None, raw=False):
+    def stack_ESD(self, bin_edges=None, idxlist=None, raw=False, mscaling=True, contamination=True, comoving=True):
         '''
             Stack scaled ESDs
 
@@ -68,7 +68,13 @@ class cluster_sample:
             idxlist : list
                 Indices of the array to stack. Defaults to stacking all clusters.
             raw : bool
-                Compute the
+                Compute the ESD using PSF-uncorrected ellipticities. Defaults to False
+            mscaling : bool
+                Scales individual ESD by M500. Defaults to True
+            contamination : bool
+                Compute the cluster member contamination and obscuration corrections for individual clusters. Defaults to True
+            comoving : bool
+                Stack in comoving coordinates. Defaults to False
         '''
         import astropy.constants as const
         if(idxlist == None):
@@ -76,15 +82,23 @@ class cluster_sample:
 
         bin_edges = Quantity(bin_edges)
         if(bin_edges.unit.is_equivalent('1')):
-            [self.clusters[i].compute_shear(bin_edges*self.r_500[i], raw) for i in xrange(self.size)]
+            [self.clusters[i].compute_shear(bin_edges*self.r_500[i], raw, contamination, comoving) for i in xrange(self.size)]
         else:
-            [self.clusters[i].compute_shear(bin_edges, raw) for i in xrange(self.size)]
+            [self.clusters[i].compute_shear(bin_edges, raw, contamination, comoving) for i in xrange(self.size)]
 
-        self.ESDs, self.ESDs_err = np.zeros([self.size, len(bin_edges)-1])/u.Mpc/u.Mpc, np.zeros([self.size, len(bin_edges)-1])/u.Mpc/u.Mpc
+        if(mscaling):
+            self.ESDs, self.ESDs_err = np.zeros([self.size, len(bin_edges)-1])/u.Mpc/u.Mpc, np.zeros([self.size, len(bin_edges)-1])/u.Mpc/u.Mpc
+        else:
+            self.ESDs, self.ESDs_err = np.zeros([self.size, len(bin_edges)-1])*u.Msun/u.Mpc/u.Mpc, np.zeros([self.size, len(bin_edges)-1])*u.Msun/u.Mpc/u.Mpc
+
         for i in xrange(self.size):
             if(i in idxlist):
-                self.ESDs[i] = self.clusters[i].gtbin/self.da[i]/self.beta_avg[i]/self.m_500[i]*(const.c**2.)/4./np.pi/const.G/u.rad
-                self.ESDs_err[i] = self.clusters[i].dgtbin/self.da[i]/self.beta_avg[i]/self.m_500[i]*(const.c**2.)/4./np.pi/const.G/u.rad
+                if(mscaling):
+                    self.ESDs[i] = self.clusters[i].gtbin/self.da[i]/self.beta_avg[i]/self.m_500[i]*(const.c**2.)/4./np.pi/const.G/u.rad
+                    self.ESDs_err[i] = self.clusters[i].dgtbin/self.da[i]/self.beta_avg[i]/self.m_500[i]*(const.c**2.)/4./np.pi/const.G/u.rad
+                else:
+                    self.ESDs[i] = self.clusters[i].gtbin/self.da[i]/self.beta_avg[i]*(const.c**2.)/4./np.pi/const.G/u.rad
+                    self.ESDs_err[i] = self.clusters[i].dgtbin/self.da[i]/self.beta_avg[i]*(const.c**2.)/4./np.pi/const.G/u.rad
 
         rmin = bin_edges[:-1]
         rmax = bin_edges[1:]
@@ -127,6 +141,7 @@ class cluster:
     # Cluster data for shear
     xcen, ycen, mmin, mmax = [None for i in xrange(4)]
     da = 0*u.Mpc/u.rad
+    z = None
 
     # Contamination and obscuration parameters
     n_0, r_core, r_max, r_500 = 0*u.arcsec, 0*u.Mpc, 0*u.Mpc, 0*u.Mpc
@@ -161,7 +176,7 @@ class cluster:
                 continue
 
 
-    def compute_shear(self, bin_edges=None, raw=False):
+    def compute_shear(self, bin_edges=None, raw=False, contamination=True, comoving=False):
         '''
             Compute tangential and cross component of the shear around the
             cluster center. The results are stored in gtbin and gxbin, the error
@@ -176,6 +191,10 @@ class cluster:
                 gtbin and gxbin will have size N-1.
             raw : bool
                 Load raw ellipticities instead of the PSF corrected ones.
+            contamination : bool
+                Compute members contamination and obscuration. Defaults to True
+            comoving : bool
+                Compute using comoving coordinates. Defaults to False
         '''
 
 
@@ -207,6 +226,8 @@ class cluster:
 
         if(bin_edges.unit.is_equivalent('Mpc')):
             r = r * self.da
+            if(comoving):
+                r = r* (1.+self.z)
         else:
             r = r
 
@@ -229,21 +250,27 @@ class cluster:
         gtbin = gtbin/kbin
         gxbin = gxbin/kbin
 
+        if(contamination):
+            if(bin_edges.unit.is_equivalent('Mpc')):
+                fcontam = self.n_0*self.da * (1./(rbin + self.r_core) - 1./(self.r_max + self.r_core))
+                fcontam[rbin>self.r_max] = 0
+                fobscured = 1+0.022/(0.14+(rbin/self.r_500)**2.)
+            else:
+                fcontam = self.n_0 * (1./(rbin + self.r_core/self.da) - 1./(self.r_max/self.da + self.r_core/self.da))
+                fcontam[rbin>self.r_max/self.da] = 0
+                fobscured = 1.+0.022/(0.14+(rbin/self.r_500*self.da)**2.)
 
-        if(bin_edges.unit.is_equivalent('Mpc')):
-            fcontam = self.n_0*self.da * (1./(rbin + self.r_core) - 1./(self.r_max + self.r_core))
-            fcontam[rbin>self.r_max] = 0
-            fobscured = 1+0.022/(0.14+(rbin/self.r_500)**2.)
+            self.gtbin = (gtbin*(fcontam*fobscured + 1)).to(1)
+            self.gxbin = gxbin
+            self.dgtbin = (dgtbin*(fcontam*fobscured + 1)).to(1)
+            self.fcontam = (fcontam*fobscured).to(1)
         else:
-            fcontam = self.n_0 * (1./(rbin + self.r_core/self.da) - 1./(self.r_max/self.da + self.r_core/self.da))
-            fcontam[rbin>self.r_max/self.da] = 0
-            fobscured = 1.+0.022/(0.14+(rbin/self.r_500*self.da)**2.)
+            self.gtbin = gtbin
+            self.gxbin = gxbin
+            self.dgtbin = dgtbin
+            self.fcontam = None
 
         self.rbin = rbin
-        self.gtbin = (gtbin*(fcontam*fobscured + 1)).to(1)
-        self.gxbin = gxbin
-        self.dgtbin = (dgtbin*(fcontam*fobscured + 1)).to(1)
-        self.fcontam = fcontam.to(1)
         self.nbin = nbin
 
     def print_info(self):
