@@ -57,7 +57,7 @@ class cluster_sample:
             for varname in varnames:
                 setattr(self.clusters[i], varname, data[varname].quantity[i])
 
-    def stack_ESD(self, bin_edges=None, idxlist=None, raw=False, mscaling=True, contamination=True, comoving=True):
+    def stack_ESD(self, bin_edges=None, idxlist=None, raw=False, mscaling=False, contamination=True, comoving=False):
         '''
             Stack scaled ESDs
 
@@ -70,7 +70,7 @@ class cluster_sample:
             raw : bool
                 Compute the ESD using PSF-uncorrected ellipticities. Defaults to False
             mscaling : bool
-                Scales individual ESD by M500. Defaults to True
+                Scales individual ESD by M500. Defaults to False
             contamination : bool
                 Compute the cluster member contamination and obscuration corrections for individual clusters. Defaults to True
             comoving : bool
@@ -152,6 +152,7 @@ class cluster:
         self.rbin = None
         self.gtbin = None
         self.gxbin = None
+        self.ng = None
 
         data_table = Table.read(filepath)
 
@@ -175,6 +176,83 @@ class cluster:
                 i+=1
                 continue
 
+    def compute_ng(self, bin_edges=None, gridsize=100, comoving=False, maskfile=None):
+        '''
+            Compute the source density around the cluster center. The results are
+            stored in self.nbing (number of galaxies per bin), self.ng (number density),
+            rbing (radial bins) and fmg (fraction of area masked per radial bin).
+            Takes into account masking.
+
+            Parameters
+            ----------
+            bin_edges : Quantity or float
+                Array or the bin edges. For bins of size N,
+                gtbin and gxbin will have size N-1.
+            gridsize : int
+                Pixel size of the grid used to compute the non-masked area.
+                Smaller number = better resolution = slower computation.
+            comoving : bool
+                Compute using comoving coordinates. Defaults to False
+        '''
+        #import pyregion
+        from region_util import Rutil
+
+        #Magnitude cut
+        idx = (self.m > self.mmin) & (self.m < self.mmax) & (self.pg>0.1) & (self.delmag == 0)
+        x, y = self.x[idx], self.y[idx]
+
+        # Create grid to compute non-masked area
+        x_grid, y_grid = np.meshgrid(np.arange(np.ceil(x.max()/gridsize)), np.arange(np.ceil(y.max()/gridsize)))
+        x_grid = (x_grid.flatten()+0.5)*gridsize
+        y_grid = (y_grid.flatten()+0.5)*gridsize
+
+        #Load mask
+        mask = Rutil(maskfile)
+
+        #Transform x and y in arcsec
+        x = self.pixsize*(x - self.xcen)
+        y = self.pixsize*(y - self.ycen)
+        r = np.sqrt(x**2.+y**2.)
+
+        # Grid in physical quantities
+        x_grid_p = self.pixsize*(x_grid - self.xcen)
+        y_grid_p = self.pixsize*(y_grid - self.ycen)
+        r_grid_p = np.sqrt(x_grid_p**2.+y_grid_p**2.)
+
+        if(bin_edges.unit.is_equivalent('Mpc')):
+            r = r * self.da
+            r_grid_p = r_grid_p * self.da
+            if(comoving):
+                r = r * (1.+self.z)
+                r_grid_p = r_grid_p * (1.+self.z)
+        else:
+            r = r
+            r_grid_p = r_grid_p
+
+        rmin = bin_edges[:-1]
+        rmax = bin_edges[1:]
+
+        nbin = len(rmin)
+        rbin = (rmax**3.-rmin**3.)/(rmax**2.-rmin**2.)*2./3. # area-weighted average
+        area = np.pi * (rmax**2. - rmin**2.) # Ring area
+        nbing, ng, fmg = [np.zeros(nbin) for i in xrange(3)]
+        ng = ng/area.unit
+
+        for i in xrange(len(rmin)):
+            idx = (r < rmax[i]) & (r >= rmin[i])
+            nbing[i] = idx.sum()
+
+            # Reduce area by fraction of points of the grid that are non-masked
+            idx_grid = (r_grid_p < rmax[i]) & (r_grid_p >= rmin[i])
+            idx_masked = mask(x_grid[idx_grid], y_grid[idx_grid])
+
+            fmg[i] = (~idx_masked).sum()*1./idx_grid.sum()
+            ng[i] = nbing[i]/area[i]/fmg[i]
+
+        self.ng = ng
+        self.rbing = rbin
+        self.nbing = nbing
+        self.fmg = fmg
 
     def compute_shear(self, bin_edges=None, raw=False, contamination=True, comoving=False):
         '''
@@ -182,7 +260,7 @@ class cluster:
             cluster center. The results are stored in gtbin and gxbin, the error
             on the tangential shear is stored in dgtbin.
 
-            Does not take into account the contamination from cluster members.
+            Does take into account the contamination from cluster members.
 
             Parameters
             ----------

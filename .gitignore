@@ -120,3 +120,6 @@ emcee/*
 
 #Duplicates
 *_2.py
+
+#test
+*test.py
