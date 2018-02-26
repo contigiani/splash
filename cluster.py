@@ -201,6 +201,10 @@ class cluster:
         idx = (self.m > self.mmin) & (self.m < self.mmax) & (self.pg>0.1) & (self.delmag == 0)
         x, y = self.x[idx], self.y[idx]
 
+        # Find distance to closest edge
+        max_r = np.array([abs(self.xcen - x.max()), abs(self.xcen - x.min()), abs(self.ycen - y.max()), abs(self.ycen - y.min() )])
+        max_r = max_r.min()*self.pixsize
+
         # Create grid to compute non-masked area
         x_grid, y_grid = np.meshgrid(np.arange(np.ceil(x.max()/gridsize)), np.arange(np.ceil(y.max()/gridsize)))
         x_grid = (x_grid.flatten()+0.5)*gridsize
@@ -208,6 +212,7 @@ class cluster:
 
         #Load mask
         mask = Rutil(maskfile)
+        #box = Rutil([x.max()/2., y.max()/2., x.max(), y.max()])
 
         #Transform x and y in arcsec
         x = self.pixsize*(x - self.xcen)
@@ -219,12 +224,15 @@ class cluster:
         y_grid_p = self.pixsize*(y_grid - self.ycen)
         r_grid_p = np.sqrt(x_grid_p**2.+y_grid_p**2.)
 
+
         if(bin_edges.unit.is_equivalent('Mpc')):
             r = r * self.da
             r_grid_p = r_grid_p * self.da
+            max_r = max_r * self.da
             if(comoving):
                 r = r * (1.+self.z)
                 r_grid_p = r_grid_p * (1.+self.z)
+                max_r = max_r * (1.+self.z)
         else:
             r = r
             r_grid_p = r_grid_p
@@ -248,6 +256,10 @@ class cluster:
 
             fmg[i] = (~idx_masked).sum()*1./idx_grid.sum()
             ng[i] = nbing[i]/area[i]/fmg[i]
+
+            if(rmax[i]>max_r):
+                ng[i] = 0./area[i]
+                fmg[i] = 0.
 
         self.ng = ng
         self.rbing = rbin
