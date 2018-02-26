@@ -176,7 +176,7 @@ class cluster:
                 i+=1
                 continue
 
-    def compute_ng(self, bin_edges=None, gridsize=100, comoving=False, maskfile=None):
+    def compute_ng(self, bin_edges=None, gridsize=20, comoving=False, maskfile=None):
         '''
             Compute the source density around the cluster center. The results are
             stored in self.nbing (number of galaxies per bin), self.ng (number density),
@@ -243,8 +243,8 @@ class cluster:
         nbin = len(rmin)
         rbin = (rmax**3.-rmin**3.)/(rmax**2.-rmin**2.)*2./3. # area-weighted average
         area = np.pi * (rmax**2. - rmin**2.) # Ring area
-        nbing, ng, fmg = [np.zeros(nbin) for i in xrange(3)]
-        ng = ng/area.unit
+        nbing, ng, fmg, dng = [np.zeros(nbin) for i in xrange(4)]
+        ng, dng = ng/area.unit, dng/area.unit
 
         for i in xrange(len(rmin)):
             idx = (r < rmax[i]) & (r >= rmin[i])
@@ -256,12 +256,16 @@ class cluster:
 
             fmg[i] = (~idx_masked).sum()*1./idx_grid.sum()
             ng[i] = nbing[i]/area[i]/fmg[i]
+            dng[i] = np.sqrt(nbing[i])/area[i]/fmg[i]
 
             if(rmax[i]>max_r):
                 ng[i] = 0./area[i]
                 fmg[i] = 0.
+                dng[i] = 0/area[i]
+
 
         self.ng = ng
+        self.dng = dng
         self.rbing = rbin
         self.nbing = nbing
         self.fmg = fmg
