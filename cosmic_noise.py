@@ -25,9 +25,11 @@ def P_k(z_s=None, pw=None):
             W : function
                 Distribution of the ratio of angular diameter distance
                 D_ls/D_s as a function of the comoving distance to the lens chi
-                (assuming Planck15 cosmology).
+                (assuming Planck15 cosmology). Used only if z_s is not
+                specified.
 
-                For the expression for W(chi) see Contigiani+ 2018.
+                For how to compute W(chi) given a redshift distribution
+                see Contigiani+ 2018.
     '''
     from astropy.cosmology import Planck15 as cosmo
     import astropy.constants as const
@@ -47,7 +49,7 @@ def P_k(z_s=None, pw=None):
     Pk = camb.get_matter_power_interpolator(pars, zmax=3, hubble_units=False, k_hunit=False)
 
     #Comoving distances
-    z_array = np.linspace(0, 3., 200)
+    z_array = np.linspace(0, 10., 200)
     chi_array = cosmo.comoving_distance(z_array).to('Mpc').value
     z = interp1d(chi_array, z_array)
 
@@ -55,9 +57,7 @@ def P_k(z_s=None, pw=None):
         chi_s = cosmo.comoving_distance(z_s).to('Mpc').value
         W = lambda w: 1.-w/chi_s
     else:
-        ws = np.linspace()
-        tempint = lambda w: pw(w)*(w-)
-        pw =
+        print "Not implemented!"
 
 
     #Projected power spectrum
@@ -71,9 +71,7 @@ def P_k(z_s=None, pw=None):
     return interp1d(ls, Pls)
 
 
-P_kdefault = P_k(params=[1., 1.])
-
-def CLSS(self, bin_edges, P_k=P_kdefault, l_min_int=20, l_max_int=1e4, h=1.):
+def CLSS(self, bin_edges, z_s, l_min_int=20, l_max_int=1e4, h=1.):
     '''
         Computes the cosmic noise covariance matrix for tangential shear.
         Hardcoded cosmology: Planck15
@@ -83,7 +81,7 @@ def CLSS(self, bin_edges, P_k=P_kdefault, l_min_int=20, l_max_int=1e4, h=1.):
             bin_edges : Quantity
                 Egdes of the angular bins.
 
-            Pk : function
+            (?)P_k : function
                 Convergence angular momentum P_k(l), By default, a fit to the
                 COSMOS data is used.
 
@@ -115,6 +113,7 @@ def CLSS(self, bin_edges, P_k=P_kdefault, l_min_int=20, l_max_int=1e4, h=1.):
     thetamin = (bin_edges[:-1]*.675/h).to('radian').value
     thetamax = (bin_edges[1:]*.675/h).to('radian').value
 
+    P_k = P_k(z_s)
     for j in xrange(nbin):
         for k in xrange(j+1):
             inttemp = lambda l: l*P_k(l)*g(l, thetamin[j], thetamax[j])*g(l, thetamin[k], thetamax[k])
