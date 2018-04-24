@@ -1,20 +1,27 @@
 import numpy as np
 from scipy.special import gamma as Gamma
 from scipy.stats import rv_continuous
+from astropy import units as u
 
-class Brained(rv_continuous):
+class Brained_gen(rv_continuous):
     '''
         Magnitude limited redshift distribution from Brainerd et al. 1996
 
-        n(z) \propto z**2. * exp(z/z_0*beta)
+        n(z) \propto z**2. * exp(-(z/z_0)**beta)
     '''
     def _pdf(self, x, z_0, beta):
-        return beta* (x**2.) * exp(-beta*x/z_0)/Gamma(3./beta)/z_0**3.
+        return beta* (x**2.) * np.exp(-(x/z_0)**beta )/Gamma(3./beta)/z_0**3.
 
-def P_k(z_s=None, pw=None):
+Brained = Brained_gen(a=0, b=np.inf)
+
+def P_k_gen(z_s=None, z_list=None, p_z=Brained(z_0 =0.046, beta=0.55).pdf, l_min=20, l_max=1e4,):
     '''
         Return an interpolator for the projected convergence power spectrum
-        P_k(l), given an input redshift distribution.
+        P_k(l), given an input redshift distribution. For how this is done
+        see Contigiani+ 2018.
+
+        The default redshift distribution is a fit to
+        COSMOS2015 (Laigle et al. 2016) for CCCP-like data.
 
         Parameters
         ----------
@@ -22,24 +29,27 @@ def P_k(z_s=None, pw=None):
                 One of the possible inputs, the redshift of the source plane
                 (assumes plane approximation)
 
-            W : function
-                Distribution of the ratio of angular diameter distance
-                D_ls/D_s as a function of the comoving distance to the lens chi
-                (assuming Planck15 cosmology). Used only if z_s is not
-                specified.
+            z_list : np.array
+                One of the possible inputs, representative list of source
+                redshifts.
 
-                For how to compute W(chi) given a redshift distribution
-                see Contigiani+ 2018.
+            p_z : function
+                Redsfhit PDF
+
+            l_min, l_max : float
+                P_k(l) is comuted for l_min < l < l_max
     '''
     from astropy.cosmology import Planck15 as cosmo
     import astropy.constants as const
     from scipy.interpolate import interp1d
+    from scipy.misc import derivative
+    from scipy.integrate import quad
     import camb
 
     #Hubble parameter
     H_0 = 67.5*u.km/u.s # Technically also /u.Mpc, but here distances are all in Mpc.
     Omega_m = 0.312
-    prefactor = (9*H_0**4.*Omega_m**2./4../const.c**4.).to(1).value
+    prefactor = (9*H_0**4.*Omega_m**2./4./const.c**4.).to(1).value
 
     #Obtain matter power spectrum
     pars = camb.CAMBparams()
@@ -49,7 +59,7 @@ def P_k(z_s=None, pw=None):
     Pk = camb.get_matter_power_interpolator(pars, zmax=3, hubble_units=False, k_hunit=False)
 
     #Comoving distances
-    z_array = np.linspace(0, 10., 200)
+    z_array = np.linspace(0, 10., 2000)
     chi_array = cosmo.comoving_distance(z_array).to('Mpc').value
     z = interp1d(chi_array, z_array)
 
@@ -57,16 +67,29 @@ def P_k(z_s=None, pw=None):
         chi_s = cosmo.comoving_distance(z_s).to('Mpc').value
         W = lambda w: 1.-w/chi_s
     else:
-        print "Not implemented!"
+        ws = np.linspace(0, 9500, 1000)
 
+        if(z_list is not None):
+            w_list = cosmo.comoving_distance(z_list).to('Mpc').value
+            Norm = w_list.size
+            Ws = np.array([(1.-w/w_list[w_list > w]).sum()/Norm for w in ws])
 
+        else:
+            dz_dw = interp1d(chi_array[:-1], np.diff(z_array)/np.diff(chi_array))
+            Ws = np.zeros(1000)
+            for i in xrange(1000):
+                inttemp = lambda w: dz_dw(w)*p_z(z(w)) * (w-ws[i])/w
+                Ws[i] = quad(inttemp, 0, 9500)[0]
+
+        W = interp1d(ws, Ws)
+        chi_s = 9500
     #Projected power spectrum
-    ls = np.geomspace(l_min_int, l_max_int, 20)
-    Pls = np.zeros(20)
+    ls = np.geomspace(l_min, l_max, 30)
+    Pls = np.zeros(30)
     for j in xrange(len(ls)):
         l = ls[j]
         tempint = lambda w: (1.+z(w))**2. * W(w)**2. * np.exp(Pk(z(w), np.log(l/w)))
-        Pls[j] = quad(tempint, 0., chi_s)[0]
+        Pls[j] = quad(tempint, 0., chi_s)[0]*prefactor
 
     return interp1d(ls, Pls)
 
@@ -117,7 +140,7 @@ def CLSS(self, bin_edges, z_s, l_min_int=20, l_max_int=1e4, h=1.):
     for j in xrange(nbin):
         for k in xrange(j+1):
             inttemp = lambda l: l*P_k(l)*g(l, thetamin[j], thetamax[j])*g(l, thetamin[k], thetamax[k])
-            covariance_matrix[j, k] = quad(inttemp, l_min_int, l_max_int)[0]*2.np.pi
+            covariance_matrix[j, k] = quad(inttemp, l_min_int, l_max_int)[0]*2.*np.pi
 
     for j in xrange(nbin):
         for k in xrange(nbin):
