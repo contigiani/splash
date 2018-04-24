@@ -8,6 +8,12 @@ class Brained_gen(rv_continuous):
         Magnitude limited redshift distribution from Brainerd et al. 1996
 
         n(z) \propto z**2. * exp(-(z/z_0)**beta)
+
+        From rv_continous every instance of Brained_gen inherits methods like
+        .fit() (MLE fitting)
+        .rvs() (random sampling)
+
+        Check scipy for more info. 
     '''
     def _pdf(self, x, z_0, beta):
         return beta* (x**2.) * np.exp(-(x/z_0)**beta )/Gamma(3./beta)/z_0**3.
@@ -56,7 +62,7 @@ def P_k_gen(z_s=None, z_list=None, p_z=Brained(z_0 =0.046, beta=0.55).pdf, l_min
     pars.set_cosmology(H0=67.5, ombh2=0.022, omch2=0.120)
     pars.InitPower.set_params(ns=0.965)
     #Camb returns the power spectrum (in Mpc-3) as a function of k (in Mpc)
-    Pk = camb.get_matter_power_interpolator(pars, zmax=3, hubble_units=False, k_hunit=False)
+    Pk = camb.get_matter_power_interpolator(pars, zmax=10, hubble_units=False, k_hunit=False)
 
     #Comoving distances
     z_array = np.linspace(0, 10., 2000)
@@ -67,7 +73,7 @@ def P_k_gen(z_s=None, z_list=None, p_z=Brained(z_0 =0.046, beta=0.55).pdf, l_min
         chi_s = cosmo.comoving_distance(z_s).to('Mpc').value
         W = lambda w: 1.-w/chi_s
     else:
-        ws = np.linspace(0, 9500, 1000)
+        ws = np.linspace(0, 9500, 100)
 
         if(z_list is not None):
             w_list = cosmo.comoving_distance(z_list).to('Mpc').value
@@ -76,13 +82,14 @@ def P_k_gen(z_s=None, z_list=None, p_z=Brained(z_0 =0.046, beta=0.55).pdf, l_min
 
         else:
             dz_dw = interp1d(chi_array[:-1], np.diff(z_array)/np.diff(chi_array))
-            Ws = np.zeros(1000)
-            for i in xrange(1000):
-                inttemp = lambda w: dz_dw(w)*p_z(z(w)) * (w-ws[i])/w
-                Ws[i] = quad(inttemp, 0, 9500)[0]
+            Ws = np.zeros(100)
+            for i in xrange(100):
+                inttemp = lambda x: dz_dw(x)*p_z(z(x)) * (1.-ws[i]/x)
+                Ws[i] = quad(inttemp, ws[i], 9000)[0]
 
         W = interp1d(ws, Ws)
-        chi_s = 9500
+        chi_s = 9000
+
     #Projected power spectrum
     ls = np.geomspace(l_min, l_max, 30)
     Pls = np.zeros(30)
@@ -91,7 +98,7 @@ def P_k_gen(z_s=None, z_list=None, p_z=Brained(z_0 =0.046, beta=0.55).pdf, l_min
         tempint = lambda w: (1.+z(w))**2. * W(w)**2. * np.exp(Pk(z(w), np.log(l/w)))
         Pls[j] = quad(tempint, 0., chi_s)[0]*prefactor
 
-    return interp1d(ls, Pls)
+    return interp1d(ls, Pls), W
 
 
 def CLSS(self, bin_edges, z_s, l_min_int=20, l_max_int=1e4, h=1.):
