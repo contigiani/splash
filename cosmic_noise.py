@@ -13,7 +13,7 @@ class Brained_gen(rv_continuous):
         .fit() (MLE fitting)
         .rvs() (random sampling)
 
-        Check scipy for more info. 
+        Check scipy for more info.
     '''
     def _pdf(self, x, z_0, beta):
         return beta* (x**2.) * np.exp(-(x/z_0)**beta )/Gamma(3./beta)/z_0**3.
@@ -101,7 +101,7 @@ def P_k_gen(z_s=None, z_list=None, p_z=Brained(z_0 =0.046, beta=0.55).pdf, l_min
     return interp1d(ls, Pls), W
 
 
-def CLSS(self, bin_edges, z_s, l_min_int=20, l_max_int=1e4, h=1.):
+def CLSS(bin_edges, P_k, l_min_int=20, l_max_int=1e4, h=1.):
     '''
         Computes the cosmic noise covariance matrix for tangential shear.
         Hardcoded cosmology: Planck15
@@ -111,16 +111,12 @@ def CLSS(self, bin_edges, z_s, l_min_int=20, l_max_int=1e4, h=1.):
             bin_edges : Quantity
                 Egdes of the angular bins.
 
-            (?)P_k : function
-                Convergence angular momentum P_k(l), By default, a fit to the
-                COSMOS data is used.
+            P_k : function
+                Convergence angular momentum P_k(l), see P_k_gen for
+                an example.
 
             l_min_int, l_max_int : float
                 Limits for the multipole integrals
-
-            souce_z : bool
-                Flag for single plane lens approximation with effective source
-                redshift z_s
 
             h : float
                 The value of H_0/(100 Mpc/km/s) assumed for bin_edges.
@@ -128,6 +124,7 @@ def CLSS(self, bin_edges, z_s, l_min_int=20, l_max_int=1e4, h=1.):
     from scipy.special import jn
     from scipy.integrate import quad
 
+    nbin = len(bin_edges) -1
 
     # Define auxiliary function
     def g(l, t1, t2):
@@ -143,7 +140,6 @@ def CLSS(self, bin_edges, z_s, l_min_int=20, l_max_int=1e4, h=1.):
     thetamin = (bin_edges[:-1]*.675/h).to('radian').value
     thetamax = (bin_edges[1:]*.675/h).to('radian').value
 
-    P_k = P_k(z_s)
     for j in xrange(nbin):
         for k in xrange(j+1):
             inttemp = lambda l: l*P_k(l)*g(l, thetamin[j], thetamax[j])*g(l, thetamin[k], thetamax[k])
@@ -152,6 +148,6 @@ def CLSS(self, bin_edges, z_s, l_min_int=20, l_max_int=1e4, h=1.):
     for j in xrange(nbin):
         for k in xrange(nbin):
             if(k>j):
-                covariance_matrix[i][j, k] = covariance_matrices[i][k, j]
+                covariance_matrix[j, k] = covariance_matrix[k, j]
 
     return covariance_matrix
