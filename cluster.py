@@ -40,7 +40,7 @@ class cluster_sample:
         self.clusters = [None]*self.size
 
         # Load cluster catalog
-        varnames = ['r_500', 'm_500', 'beta_avg', 'z', 'da']
+        varnames = ['r_500', 'm_500', 'beta_avg', 'z', 'da', 'z_s']
 
         for varname in varnames:
             setattr(self, varname, data[varname].quantity)
@@ -57,7 +57,7 @@ class cluster_sample:
             for varname in varnames:
                 setattr(self.clusters[i], varname, data[varname].quantity[i])
 
-    def stack_ESD(self, bin_edges=None, idxlist=None, raw=False, mscaling=False, contamination=True, comoving=False):
+    def stack_ESD(self, bin_edges=None, raw=False, mscaling=False, contamination=True, comoving=False, cosmic_noise=None):
         '''
             Stack scaled ESDs
 
@@ -65,8 +65,6 @@ class cluster_sample:
             ----------
             bin_edges : Quantity or float
                 Edges of the azimuthal bins to average over. Can be either a distance, comoving or
-            idxlist : list
-                Indices of the array to stack. Defaults to stacking all clusters.
             raw : bool
                 Compute the ESD using PSF-uncorrected ellipticities. Defaults to False
             mscaling : bool
@@ -75,10 +73,13 @@ class cluster_sample:
                 Compute the cluster member contamination and obscuration corrections for individual clusters. Defaults to True
             comoving : bool
                 Stack in comoving coordinates. Defaults to False
+            cosmic_noise : function
+                Compute cosmic noise covariance matrix if a projected
+                convergence power spectrum P_k(l) is provided. See
+                cosmic_noise module. Works only if stacking in physical
+                units.
         '''
         import astropy.constants as const
-        if(idxlist == None):
-            idxlist = range(self.size)
 
         bin_edges = Quantity(bin_edges)
         if(bin_edges.unit.is_equivalent('1')):
@@ -92,13 +93,12 @@ class cluster_sample:
             self.ESDs, self.ESDs_err = np.zeros([self.size, len(bin_edges)-1])*u.Msun/u.Mpc/u.Mpc, np.zeros([self.size, len(bin_edges)-1])*u.Msun/u.Mpc/u.Mpc
 
         for i in xrange(self.size):
-            if(i in idxlist):
-                if(mscaling):
-                    self.ESDs[i] = self.clusters[i].gtbin/self.da[i]/self.beta_avg[i]/self.m_500[i]*(const.c**2.)/4./np.pi/const.G/u.rad
-                    self.ESDs_err[i] = self.clusters[i].dgtbin/self.da[i]/self.beta_avg[i]/self.m_500[i]*(const.c**2.)/4./np.pi/const.G/u.rad
-                else:
-                    self.ESDs[i] = self.clusters[i].gtbin/self.da[i]/self.beta_avg[i]*(const.c**2.)/4./np.pi/const.G/u.rad
-                    self.ESDs_err[i] = self.clusters[i].dgtbin/self.da[i]/self.beta_avg[i]*(const.c**2.)/4./np.pi/const.G/u.rad
+            if(mscaling):
+                self.ESDs[i] = self.clusters[i].gtbin/self.da[i]/self.beta_avg[i]/self.m_500[i]*(const.c**2.)/4./np.pi/const.G/u.rad
+                self.ESDs_err[i] = self.clusters[i].dgtbin/self.da[i]/self.beta_avg[i]/self.m_500[i]*(const.c**2.)/4./np.pi/const.G/u.rad
+            else:
+                self.ESDs[i] = self.clusters[i].gtbin/self.da[i]/self.beta_avg[i]*(const.c**2.)/4./np.pi/const.G/u.rad
+                self.ESDs_err[i] = self.clusters[i].dgtbin/self.da[i]/self.beta_avg[i]*(const.c**2.)/4./np.pi/const.G/u.rad
 
         rmin = bin_edges[:-1]
         rmax = bin_edges[1:]
@@ -110,11 +110,44 @@ class cluster_sample:
         self.ESD = np.sum(self.ESDs, 0)/self.n
         self.ESDerr = np.sqrt((self.ESDs_err**2.).sum(0))/self.n
 
+        print 'DONE STACKING'
+        if(cosmic_noise is not None):
+            if not bin_edges.unit.is_equivalent('Mpc'):
+                print "The Cosmic noise computation is implemented only for \
+                        bins in physical units.\
+                        If you're stacking using angular distances it's more \
+                        reasonable to just call cosmic_noise.CLSS()."
+                return False
+            from cosmic_noise import CLSS
+
+            self.et_cov = [None]*self.size
+
+
+            nbin = len(bin_edges) -1
+            if(mscaling):
+                self.Cov = np.zeros((nbin, nbin))*(1./u.Mpc/u.Mpc)**2.
+            else:
+                self.Cov = np.zeros((nbin, nbin))*(u.Msun/u.Mpc/u.Mpc)**2.
+
+            for i in xrange(self.size):
+                print i, " cluster"
+                self.et_cov[i] = CLSS(bin_edges/self.da[i],cosmic_noise)
+                for j in xrange(nbin):
+                    for k in xrange(nbin):
+                            if(mscaling):
+                                self.Cov[j, k] += self.et_cov[i][j, k] *(1./self.da[i]/self.beta_avg[i]/self.m_500[i]*(const.c**2.)/4./np.pi/const.G/u.rad)**2. / self.n[j] / self.n[k]
+                            else:
+                                self.Cov[j, k] += self.et_cov[i][j, k] * (1./self.da[i]/self.beta_avg[i]*(const.c**2.)/4./np.pi/const.G/u.rad)**2. / self.n[j] / self.n[k]
+
+            for i in xrange(nbin):
+                self.Cov[i, i] += self.ESDerr[i]**2.
+
     def __getitem__(self, item):
         return self.clusters[item]
 
     def __len__(self):
         return self.size
+
 
 class cluster:
     '''
