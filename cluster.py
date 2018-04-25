@@ -110,7 +110,6 @@ class cluster_sample:
         self.ESD = np.sum(self.ESDs, 0)/self.n
         self.ESDerr = np.sqrt((self.ESDs_err**2.).sum(0))/self.n
 
-        print 'DONE STACKING'
         if(cosmic_noise is not None):
             if not bin_edges.unit.is_equivalent('Mpc'):
                 print "The Cosmic noise computation is implemented only for \
