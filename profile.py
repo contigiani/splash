@@ -1,7 +1,7 @@
 from astropy import units as u
 import numpy as np
 import scipy.integrate as integrate
-
+from scipy.integrate import simps
 
 '''
     NFW profile
@@ -40,7 +40,7 @@ def rho_NFW(r, params):
 '''
 
 
-def DK14(R, params, h_max=40., R_min=0.1, mode=0, epsr=0.001):
+def DK14(R, params, h_max=40., R_min=0.05, mode=0, epsr=0.001, hp=False):
     '''
         Return the excess surface density at R (in h100-1 Mpc)
 
@@ -49,22 +49,30 @@ def DK14(R, params, h_max=40., R_min=0.1, mode=0, epsr=0.001):
         mode : int
             One of 0, 1, 2, 3. Corresponding to:
             0: yes infall, yes f_trans (requires 8 parameters)
-            1: yes infall, no f_trans (requires 5 parameters)
-            2: no infall, yes f_trans (requires 6 parameters)
-            3: only infall (requires 2 parameters)
+            1: no infall, no f_trans (requires 5 parameters)
+        hp : bool
+            forces high precision quad integral with relative error epsr
 
     '''
-
-    sigmatemp = lambda x: x*DK14_S(x, params, h_max, mode)
+    sigmatemp = lambda x: x*DK14_S(x, params, h_max, mode, hp)
     result = np.zeros(len(R))
-    mu = integrate.quad(sigmatemp, 0.001, R_min, epsrel=epsr)[0]
+    mu = integrate.quad(sigmatemp, 0.0001, R_min, epsrel=epsr)[0]
 
+    integral = 0
     for i in xrange(len(R)):
-        result[i] = 2.*(mu+integrate.quad(sigmatemp, R_min, R[i], epsrel=epsr)[0])/R[i]/R[i] - DK14_S(R[i], params, h_max, mode)
+        if(hp):
+            integral = integrate.quad(sigmatemp, R_min, R[i], epsrel=epsr)[0]
+        else:
+            if(i==0):
+                int_x = np.linspace(R_min, R[i], 10)
+            else:
+                int_x = np.linspace(R[i-1], R[i], 10)
+            integral += simps(int_x*DK14_S(int_x, params, h_max, mode), int_x)
+        result[i] = 2.*(mu+integral)/R[i]/R[i] - DK14_S(R[i], params, h_max, mode, hp)
 
     return result
 
-def DK14_S(r, params, h_max=40, mode=0):
+def DK14_S(r, params, h_max=40, mode=0, hp=False):
     '''
         Returns the line of sight integral of the 3D profile between -hmax and +hmax, evaluated at r.
     '''
@@ -72,8 +80,13 @@ def DK14_S(r, params, h_max=40, mode=0):
     result = np.zeros(len(r))
 
     for i in xrange(len(r)):
-        rho_temp = lambda h: rho(np.sqrt(r[i]**2.+h**2.), params, mode)
-        result[i] = 2*integrate.quad(rho_temp, 0., h_max)[0]
+        if(hp):
+            rho_temp = lambda h: rho(np.sqrt(r[i]**2.+h**2.), params, mode)
+            integral = integrate.quad(rho_temp, 0., h_max)[0]
+        else:
+            int_h = np.linspace(0, h_max, 200)
+            integral = simps(rho(np.sqrt(r[i]**2.+int_h**2.), params, mode), int_h)
+        result[i] = 2*integral
 
     return result
 
@@ -82,14 +95,11 @@ def rho(r, params, mode=0):
         rho_s, r_s, logalpha, r_t, logbeta, loggamma, rho_0, s_e  = params
         return rho_Ein(r, [rho_s, r_s, logalpha])*f_trans(r, [r_t, logbeta, loggamma])+rho_infall(r, [rho_0, s_e])
     if(mode == 1):
-        rho_s, r_s, logalpha, rho_0, s_e = params
-        return rho_Ein(r, [rho_s, r_s, logalpha])+rho_infall(r, [rho_0, s_e])
-    if(mode==2):
-        rho_s, r_s, logalpha, r_t, logbeta, loggamma = params
-        return rho_Ein(r, [rho_s, r_s, logalpha])*f_trans(r, [r_t, logbeta, loggamma])
-    if(mode==3):
-        rho_0, s_e = params
-        return rho_infall(r, params)
+        if(len(params)==8):
+            rho_s, r_s, logalpha, r_t, logbeta, loggamma, rho_0, s_e  = params
+        else:
+            rho_s, r_s, logalpha, rho_0, s_e = params
+        return rho_Ein(r, [rho_s, r_s, logalpha])#+rho_infall(r, [rho_0, s_e])
 
 def rho_Ein(r, params):
     rho_s, r_s, logalpha = params
