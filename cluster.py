@@ -23,6 +23,20 @@ class cluster_sample:
         parallel : bool
             If True, perform the loading using n-1 cores, where n=multiprocessing.cpu_count().
             Requires multiprocessing. Default value: True.
+
+        Methods
+        -------
+        stack_ESD
+            Stacks the Excess surface densities of the individual clusters,
+
+            computes the following properties:
+            - self.rbin average position per radial bin
+            - self.ESD value of the ESD for the bins, units Msun/Mpc/Mpc/h
+            - self.ESD_stat_err statistical error on self.ESD
+            - self.Cov covariance matrix including cosmic noise (optional)
+            - self.ESD_err (diagonal of Cov)
+            - self[i].gt tangential shear for i-th cluster
+            - self[i].dgt error in the tangential shear for i-th cluster
     '''
 
     filepath = None
@@ -57,7 +71,7 @@ class cluster_sample:
             for varname in varnames:
                 setattr(self.clusters[i], varname, data[varname].quantity[i])
 
-    def stack_ESD(self, bin_edges=None, raw=False, mscaling=False, contamination=True, comoving=False, cosmic_noise=None):
+    def stack_ESD(self, bin_edges=None, raw=False, mscaling=False, contamination=True, comoving=False, cosmic_noise=None, weighted=False):
         '''
             Stack scaled ESDs
 
@@ -72,12 +86,15 @@ class cluster_sample:
             contamination : bool
                 Compute the cluster member contamination and obscuration corrections for individual clusters. Defaults to True
             comoving : bool
-                Stack in comoving coordinates. Defaults to False
-            cosmic_noise : function
+                Stack in comoving coordinates for bin_edges. Defaults to False
+            cosmic_noise : function or string
                 Compute cosmic noise covariance matrix if a projected
-                convergence power spectrum P_k(l) is provided. See
-                cosmic_noise module. Works only if stacking in physical
-                units.
+                convergence power spectrum P_k(l) is provided as a function.
+                Alternatively, a path to to the cosmic noise tangential shear
+                covariance matrices can also be provided.
+
+                See the cosmic_noise module for more info. Notice that this
+                works only when stacking in physical units.
         '''
         import astropy.constants as const
 
@@ -103,43 +120,73 @@ class cluster_sample:
         rmin = bin_edges[:-1]
         rmax = bin_edges[1:]
 
-        self.ESDs[np.isnan(self.ESDs)] = 0
+        self.ESDs[~np.isfinite(self.ESDs)] = 0
         self.ESDs_err[~np.isfinite(self.ESDs_err)] = 0
         self.n = (self.ESDs != 0).sum(0)
         self.rbin = (rmax**3-rmin**3)/(rmax**2-rmin**2)*2./3. # area-weighted average
-        self.ESD = np.sum(self.ESDs, 0)/self.n
-        self.ESDerr = np.sqrt((self.ESDs_err**2.).sum(0))/self.n
+
+        if(weighted):
+            w = (self.ESDs/self.ESDs_err)**2.
+            w[~np.isfinite(w)] = 0
+            w = w.sum(1)
+            self.w = w/np.sum(w, 0)
+            self.m_avg = np.sum(self.w*self.m_500)
+        else:
+            self.w = np.ones([self.size])/self.size
+
+        self.ESD_stat_err = np.zeros(len(bin_edges)-1)* self.ESDs_err.unit
+        self.ESDerr = np.zeros(len(bin_edges)-1)* self.ESDs_err.unit
+        self.ESD = np.zeros(len(bin_edges)-1)* self.ESDs.unit
+
+        for i in xrange(len(bin_edges)-1):
+            self.ESDerr[i] = np.sqrt(np.sum(self.w**2. * self.ESDs_err[:, i]**2.))*self.size/self.n[i]
+            self.ESD[i] = np.sum(self.w*self.ESDs[:, i])*self.size/self.n[i]
+
+        self.ESD_stat_err = np.copy(self.ESDerr)* self.ESDerr.unit
 
         if(cosmic_noise is not None):
             if not bin_edges.unit.is_equivalent('Mpc'):
                 print "The Cosmic noise computation is implemented only for \
                         bins in physical units.\
-                        If you're stacking using angular distances it's more \
-                        reasonable to just call cosmic_noise.CLSS()."
+                        If you're stacking using angular distances you are \
+                        better off calling cosmic_noise.CLSS() directly."
                 return False
             from cosmic_noise import CLSS
 
-            self.et_cov = [None]*self.size
-
+            if(type(cosmic_noise) == str):
+                self.et_cov = np.load(cosmic_noise)
+            else:
+                self.et_cov = [None]*self.size
 
             nbin = len(bin_edges) -1
+
             if(mscaling):
                 self.Cov = np.zeros((nbin, nbin))*(1./u.Mpc/u.Mpc)**2.
             else:
                 self.Cov = np.zeros((nbin, nbin))*(u.Msun/u.Mpc/u.Mpc)**2.
 
             for i in xrange(self.size):
-                print i, " cluster"
-                self.et_cov[i] = CLSS(bin_edges/self.da[i],cosmic_noise)
+                if(type(cosmic_noise) != str):
+                    if(comoving):
+                        self.et_cov[i] = CLSS(bin_edges/(1.+self.z[i])/self.da[i],cosmic_noise)
+                    else:
+                        self.et_cov[i] = CLSS(bin_edges/self.da[i],cosmic_noise)
                 for j in xrange(nbin):
                     for k in xrange(nbin):
                             if(mscaling):
-                                self.Cov[j, k] += self.et_cov[i][j, k] *(1./self.da[i]/self.beta_avg[i]/self.m_500[i]*(const.c**2.)/4./np.pi/const.G/u.rad)**2. / self.n[j] / self.n[k]
+                                self.Cov[j, k] += self.et_cov[i][j, k] *\
+                                (1./self.da[i]/self.beta_avg[i]/self.m_500[i]*\
+                                (const.c**2.)/4./np.pi/const.G/u.rad)**2. * self.w[i]**2. *self.size**2. / self.n[j] / self.n[k]
                             else:
-                                self.Cov[j, k] += self.et_cov[i][j, k] * (1./self.da[i]/self.beta_avg[i]*(const.c**2.)/4./np.pi/const.G/u.rad)**2. / self.n[j] / self.n[k]
+                                self.Cov[j, k] += self.et_cov[i][j, k] * \
+                                (1./self.da[i]/self.beta_avg[i] *\
+                                (const.c**2.)/4./np.pi/const.G/u.rad)**2. * self.w[i]**2. *self.size**2. / self.n[j] / self.n[k]
 
             for i in xrange(nbin):
-                self.Cov[i, i] += self.ESDerr[i]**2.
+                self.Cov[i, i] += self.ESD_stat_err[i]**2.
+
+            self.ESDerr = np.sqrt(self.Cov.diagonal())
+
 
     def __getitem__(self, item):
         return self.clusters[item]
@@ -364,6 +411,10 @@ class cluster:
         rbin = (rmax**3.-rmin**3.)/(rmax**2.-rmin**2.)*2./3. # area-weighted average
         nbin, gtbin, gxbin, dgtbin, kbin = [np.zeros(nbin) for i in xrange(5)]
 
+        rbin_cont = rbin
+        if(comoving):
+            # contamination should be evaluated using physical distances, NOT comoving
+            rbin_cont = rbin/(1.+self.z)
 
         for i in xrange(len(rmin)):
             idx = (r < rmax[i]) & (r >= rmin[i])
@@ -378,13 +429,13 @@ class cluster:
 
         if(contamination):
             if(bin_edges.unit.is_equivalent('Mpc')):
-                fcontam = self.n_0*self.da * (1./(rbin + self.r_core) - 1./(self.r_max + self.r_core))
+                fcontam = self.n_0*self.da * (1./(rbin_cont + self.r_core) - 1./(self.r_max + self.r_core))
                 fcontam[rbin>self.r_max] = 0
-                fobscured = 1+0.022/(0.14+(rbin/self.r_500)**2.)
+                fobscured = 1+0.022/(0.14+(rbin_cont/self.r_500)**2.)
             else:
-                fcontam = self.n_0 * (1./(rbin + self.r_core/self.da) - 1./(self.r_max/self.da + self.r_core/self.da))
+                fcontam = self.n_0 * (1./(rbin_cont + self.r_core/self.da) - 1./(self.r_max/self.da + self.r_core/self.da))
                 fcontam[rbin>self.r_max/self.da] = 0
-                fobscured = 1.+0.022/(0.14+(rbin/self.r_500*self.da)**2.)
+                fobscured = 1.+0.022/(0.14+(rbin_cont/self.r_500*self.da)**2.)
 
             self.gtbin = (gtbin*(fcontam*fobscured + 1)).to(1)
             self.gxbin = gxbin
