@@ -20,7 +20,7 @@ class Brained_gen(rv_continuous):
 
 Brained = Brained_gen(a=0, b=np.inf)
 
-def P_k_gen(z_s=None, z_list=None, p_z=Brained(z_0 =0.046, beta=0.55).pdf, l_min=20, l_max=1e4,):
+def P_k_gen(z_s=None, z_list=None, p_z=Brained(z_0 =0.046, beta=0.55).pdf, l_min=1., l_max=1e4,verbose=False):
     '''
         Return an interpolator for the projected convergence power spectrum
         P_k(l), given an input redshift distribution. For how this is done
@@ -95,11 +95,14 @@ def P_k_gen(z_s=None, z_list=None, p_z=Brained(z_0 =0.046, beta=0.55).pdf, l_min
     Pls = np.zeros(30)
     for j in xrange(len(ls)):
         l = ls[j]
-        tempint = lambda w: (1.+z(w))**2. * W(w)**2. * np.exp(Pk(z(w), np.log(l/w)))
-        Pls[j] = quad(tempint, 0., chi_s)[0]*prefactor
+        tempint = lambda w: (1.+z(w))**2. * W(w)**2. * np.exp(Pk(z(w), np.log(l/w)))[0]
+        temp = quad(tempint, 0., chi_s)
+        Pls[j] = temp[0]*prefactor
 
-    return interp1d(ls, Pls), W
-
+    if(verbose):
+        return interp1d(ls, Pls), W
+    else:
+        return interp1d(ls, Pls)
 
 def CLSS(bin_edges, P_k, l_min_int=20, l_max_int=1e4, h=1.):
     '''
