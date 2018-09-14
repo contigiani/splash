@@ -3,7 +3,13 @@ from scipy.special import gamma as Gamma
 from scipy.stats import rv_continuous
 from astropy import units as u
 
-class Brained_gen(rv_continuous):
+
+'''
+    Cosmic noise computations, HARDCODED COSMOLOGY
+'''
+
+
+class Brainerd_gen(rv_continuous):
     '''
         Magnitude limited redshift distribution from Brainerd et al. 1996
 
@@ -18,13 +24,16 @@ class Brained_gen(rv_continuous):
     def _pdf(self, x, z_0, beta):
         return beta* (x**2.) * np.exp(-(x/z_0)**beta )/Gamma(3./beta)/z_0**3.
 
-Brained = Brained_gen(a=0, b=np.inf)
+# This way the fitting can be done easily via Brainerd.fit()
+Brainerd = Brainerd_gen(a=0, b=np.inf)
 
-def P_k_gen(z_s=None, z_list=None, p_z=Brained(z_0 =0.046, beta=0.55).pdf, l_min=1., l_max=1e4,verbose=False):
+def P_k_gen(z_s=None, z_list=None, weights=None, p_z=Brainerd(z_0 =0.046, beta=0.55).pdf, l_min=1., l_max=1e4,verbose=False):
     '''
         Return an interpolator for the projected convergence power spectrum
-        P_k(l), given an input redshift distribution. For how this is done
+        P_kk(l), given an input redshift distribution. For how this is done
         see Contigiani+ 2018.
+
+        Hardcoded WMAP cosmology.
 
         The default redshift distribution is a fit to
         COSMOS2015 (Laigle et al. 2016) for CCCP-like data.
@@ -33,15 +42,13 @@ def P_k_gen(z_s=None, z_list=None, p_z=Brained(z_0 =0.046, beta=0.55).pdf, l_min
         ----------
             z_s : float
                 One of the possible inputs, the redshift of the source plane
-                (assumes plane approximation)
-
             z_list : np.array
                 One of the possible inputs, representative list of source
                 redshifts.
-
+            weights : np.array
+                Weights for the list z_list. Defaults to constant weighting
             p_z : function
-                Redsfhit PDF
-
+                One of the possible inputs, full redsfhit PDF
             l_min, l_max : float
                 P_k(l) is comuted for l_min < l < l_max
     '''
@@ -53,14 +60,15 @@ def P_k_gen(z_s=None, z_list=None, p_z=Brained(z_0 =0.046, beta=0.55).pdf, l_min
     import camb
 
     #Hubble parameter
-    H_0 = 67.5*u.km/u.s # Technically also /u.Mpc, but here distances are all in Mpc.
-    Omega_m = 0.312
+    H_0 = 70*u.km/u.s # Technically also /u.Mpc, but here distances are all in Mpc.
+    Omega_m = 0.3
     prefactor = (9*H_0**4.*Omega_m**2./4./const.c**4.).to(1).value
 
     #Obtain matter power spectrum
     pars = camb.CAMBparams()
-    pars.set_cosmology(H0=67.5, ombh2=0.022, omch2=0.120)
+    pars.set_cosmology(H0=70, ombh2=0.024, omch2=0.123)
     pars.InitPower.set_params(ns=0.965)
+    pars.NonLinear = camb.model.NonLinear_both
     #Camb returns the power spectrum (in Mpc-3) as a function of k (in Mpc)
     Pk = camb.get_matter_power_interpolator(pars, zmax=10, hubble_units=False, k_hunit=False)
 
@@ -76,9 +84,11 @@ def P_k_gen(z_s=None, z_list=None, p_z=Brained(z_0 =0.046, beta=0.55).pdf, l_min
         ws = np.linspace(0, 9500, 100)
 
         if(z_list is not None):
-            w_list = cosmo.comoving_distance(z_list).to('Mpc').value
-            Norm = w_list.size
-            Ws = np.array([(1.-w/w_list[w_list > w]).sum()/Norm for w in ws])
+            if(weights is None):
+                weights = np.ones(len(z_list))*1./len(z_list)
+            w_list = cosmo.comoving_distance(z_list).to('Mpc').value # integration variable
+            Ws = np.array([( (1.-w/w_list[w_list > w])*weights[w_list>w] ).sum() for w in ws])
+            # Ws is an integral for w'>w of dw' * p(w') * (1-w/w')
 
         else:
             dz_dw = interp1d(chi_array[:-1], np.diff(z_array)/np.diff(chi_array))
@@ -104,10 +114,9 @@ def P_k_gen(z_s=None, z_list=None, p_z=Brained(z_0 =0.046, beta=0.55).pdf, l_min
     else:
         return interp1d(ls, Pls)
 
-def CLSS(bin_edges, P_k, l_min_int=20, l_max_int=1e4, h=1.):
+def CLSS(bin_edges, P_k, l_min_int=20, l_max_int=1e4):
     '''
         Computes the cosmic noise covariance matrix for tangential shear.
-        Hardcoded cosmology: Planck15
 
         Parameters
         ----------
@@ -120,9 +129,6 @@ def CLSS(bin_edges, P_k, l_min_int=20, l_max_int=1e4, h=1.):
 
             l_min_int, l_max_int : float
                 Limits for the multipole integrals
-
-            h : float
-                The value of H_0/(100 Mpc/km/s) assumed for bin_edges.
     '''
     from scipy.special import jn
     from scipy.integrate import quad
@@ -140,8 +146,8 @@ def CLSS(bin_edges, P_k, l_min_int=20, l_max_int=1e4, h=1.):
     covariance_matrix = np.zeros((nbin, nbin))
 
     nbin = len(bin_edges)-1
-    thetamin = (bin_edges[:-1]*.675/h).to('radian').value
-    thetamax = (bin_edges[1:]*.675/h).to('radian').value
+    thetamin = (bin_edges[:-1]).to('radian').value
+    thetamax = (bin_edges[1:]).to('radian').value
 
     for j in xrange(nbin):
         for k in xrange(j+1):
