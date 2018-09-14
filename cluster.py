@@ -3,16 +3,15 @@ import numpy as np
 from astropy.units import Quantity
 
 '''
-    Splashback radius for KSB source catalogs
-
-    Assumes all distances to be comoving, Hoekstra+ 2015 cosmology (h=1, O_m = 0.3, O_L = 0.7).
+    Cluster sample class for tangential shear measurements
 '''
 
 
 class cluster_sample:
     '''
-        Load a cluster sample from a Table
-
+        Load a cluster sample from a Table. Two of the columns are cosmology
+        dependent: da (diameter angular distance), beta (lensing parameter).
+        See __init__ for what exacly is loaded when.
 
         Parameters
         ----------
@@ -20,9 +19,6 @@ class cluster_sample:
             Path where to find the fits table for the cluster sample.
         dirpath : str
             Path where to find the directory with the source catalogs in fits format.
-        parallel : bool
-            If True, perform the loading using n-1 cores, where n=multiprocessing.cpu_count().
-            Requires multiprocessing. Default value: True.
 
         Methods
         -------
@@ -31,19 +27,23 @@ class cluster_sample:
 
             computes the following properties:
             - self.rbin average position per radial bin
-            - self.ESD value of the ESD for the bins, units Msun/Mpc/Mpc/h
-            - self.ESD_stat_err statistical error on self.ESD
-            - self.Cov covariance matrix including cosmic noise (optional)
-            - self.ESD_err (diagonal of Cov)
-            - self[i].gt tangential shear for i-th cluster
-            - self[i].dgt error in the tangential shear for i-th cluster
+            - self.ESDs, self.ESDs_err individual ESD per cluster (with error)
+            - self.ESD stack ESD
+            - self.ESD_stat_err statistical error
+            - self.Cov covariance matrix including cosmic noise if provided,
+                self.ESDerr is the diagonal of this matrix.
+
+        __getitem__ (i)
+            Pointer to the individual i-th cluster (instance of cluster class)
+        __len__
+            Length of cluster sample
     '''
 
     filepath = None
     size = 0
 
 
-    def __init__(self, filepath, dirpath, parallel=True):
+    def __init__(self, filepath, dirpath):
         from astropy.table import Table
 
         self.filepath = filepath
@@ -54,10 +54,12 @@ class cluster_sample:
         self.clusters = [None]*self.size
 
         # Load cluster catalog
-        varnames = ['r_500', 'm_500', 'beta_avg', 'z', 'da', 'z_s']
-
+        varnames = ['r_500', 'm_g', 'beta', 'z', 'da', 'm_200', 'm_500', 'm_vir']
         for varname in varnames:
-            setattr(self, varname, data[varname].quantity)
+            try:
+                setattr(self, varname, data[varname].quantity)
+            except:
+                None
 
         # Load sources
         filelist = [dirpath+data['name'][i]+'.fits' for i in xrange(self.size)]
@@ -71,38 +73,36 @@ class cluster_sample:
             for varname in varnames:
                 setattr(self.clusters[i], varname, data[varname].quantity[i])
 
-    def stack_ESD(self, bin_edges=None, raw=False, mscaling=False, contamination=True, comoving=False, cosmic_noise=None, weighted=False):
+    def stack_ESD(self, bin_edges=None, raw=False, mscaling=False, contamination=True, comoving=False, cosmic_noise=None, weighted=False, r_limit=True):
         '''
             Stack scaled ESDs
 
             Parameters
             ----------
             bin_edges : Quantity or float
-                Edges of the azimuthal bins to average over. Can be either a distance, comoving or
+                Edges of the azimuthal bins to average over. Can be either a physical distance or sky one.
+                It float, assumes it to be a fraction of r_500 from Hoekstra15+
             raw : bool
-                Compute the ESD using PSF-uncorrected ellipticities. Defaults to False
+                Compute the ESD using old PSF-corrected ellipticities. Defaults to False
+            weighted : bool
+                Weights clusters by total SNR
             mscaling : bool
                 Scales individual ESD by M500. Defaults to False
             contamination : bool
                 Compute the cluster member contamination and obscuration corrections for individual clusters. Defaults to True
             comoving : bool
                 Stack in comoving coordinates for bin_edges. Defaults to False
-            cosmic_noise : function or string
-                Compute cosmic noise covariance matrix if a projected
-                convergence power spectrum P_k(l) is provided as a function.
-                Alternatively, a path to to the cosmic noise tangential shear
-                covariance matrices can also be provided.
-
-                See the cosmic_noise module for more info. Notice that this
-                works only when stacking in physical units.
+            cosmic_noise_path : string
+                Load the cosmic noise covariance matrix for each cluster from
+                the directory cosmic_noise_path. This is binning dependent!
         '''
         import astropy.constants as const
 
         bin_edges = Quantity(bin_edges)
         if(bin_edges.unit.is_equivalent('1')):
-            [self.clusters[i].compute_shear(bin_edges*self.r_500[i], raw, contamination, comoving) for i in xrange(self.size)]
+            [self.clusters[i].compute_shear(bin_edges*self.r_500[i], raw, contamination, comoving, r_limit) for i in xrange(self.size)]
         else:
-            [self.clusters[i].compute_shear(bin_edges, raw, contamination, comoving) for i in xrange(self.size)]
+            [self.clusters[i].compute_shear(bin_edges, raw, contamination, comoving, r_limit) for i in xrange(self.size)]
 
         if(mscaling):
             self.ESDs, self.ESDs_err = np.zeros([self.size, len(bin_edges)-1])/u.Mpc/u.Mpc, np.zeros([self.size, len(bin_edges)-1])/u.Mpc/u.Mpc
@@ -111,28 +111,29 @@ class cluster_sample:
 
         for i in xrange(self.size):
             if(mscaling):
-                self.ESDs[i] = self.clusters[i].gtbin/self.da[i]/self.beta_avg[i]/self.m_500[i]*(const.c**2.)/4./np.pi/const.G/u.rad
-                self.ESDs_err[i] = self.clusters[i].dgtbin/self.da[i]/self.beta_avg[i]/self.m_500[i]*(const.c**2.)/4./np.pi/const.G/u.rad
+                self.ESDs[i] = self.clusters[i].gtbin/self.da[i]/self.beta[i]/self.m_200[i]*(const.c**2.)/4./np.pi/const.G/u.rad
+                self.ESDs_err[i] = self.clusters[i].dgtbin/self.da[i]/self.beta[i]/self.m_200[i]*(const.c**2.)/4./np.pi/const.G/u.rad
             else:
-                self.ESDs[i] = self.clusters[i].gtbin/self.da[i]/self.beta_avg[i]*(const.c**2.)/4./np.pi/const.G/u.rad
-                self.ESDs_err[i] = self.clusters[i].dgtbin/self.da[i]/self.beta_avg[i]*(const.c**2.)/4./np.pi/const.G/u.rad
+                self.ESDs[i] = self.clusters[i].gtbin/self.da[i]/self.beta[i]*(const.c**2.)/4./np.pi/const.G/u.rad
+                self.ESDs_err[i] = self.clusters[i].dgtbin/self.da[i]/self.beta[i]*(const.c**2.)/4./np.pi/const.G/u.rad
 
         rmin = bin_edges[:-1]
         rmax = bin_edges[1:]
 
-        self.ESDs[~np.isfinite(self.ESDs)] = 0
-        self.ESDs_err[~np.isfinite(self.ESDs_err)] = 0
-        self.n = (self.ESDs != 0).sum(0)
+        self.n = np.isfinite(self.ESDs).sum(0)
         self.rbin = (rmax**3-rmin**3)/(rmax**2-rmin**2)*2./3. # area-weighted average
 
         if(weighted):
             w = (self.ESDs/self.ESDs_err)**2.
             w[~np.isfinite(w)] = 0
             w = w.sum(1)
-            self.w = w/np.sum(w, 0)
-            self.m_avg = np.sum(self.w*self.m_500)
+            self.w = w/np.sum(w, 0) # SNR per cluster
+            self.m_avg = np.sum(self.w*self.m_200)
         else:
-            self.w = np.ones([self.size])/self.size
+            self.w = np.ones([self.size])/self.size # No weights!
+
+        self.ESDs[~np.isfinite(self.ESDs)] = 0
+        self.ESDs_err[~np.isfinite(self.ESDs_err)] = 0
 
         self.ESD_stat_err = np.zeros(len(bin_edges)-1)* self.ESDs_err.unit
         self.ESDerr = np.zeros(len(bin_edges)-1)* self.ESDs_err.unit
@@ -145,19 +146,6 @@ class cluster_sample:
         self.ESD_stat_err = np.copy(self.ESDerr)* self.ESDerr.unit
 
         if(cosmic_noise is not None):
-            if not bin_edges.unit.is_equivalent('Mpc'):
-                print "The Cosmic noise computation is implemented only for \
-                        bins in physical units.\
-                        If you're stacking using angular distances you are \
-                        better off calling cosmic_noise.CLSS() directly."
-                return False
-            from cosmic_noise import CLSS
-
-            if(type(cosmic_noise) == str):
-                self.et_cov = np.load(cosmic_noise)
-            else:
-                self.et_cov = [None]*self.size
-
             nbin = len(bin_edges) -1
 
             if(mscaling):
@@ -166,27 +154,22 @@ class cluster_sample:
                 self.Cov = np.zeros((nbin, nbin))*(u.Msun/u.Mpc/u.Mpc)**2.
 
             for i in xrange(self.size):
-                if(type(cosmic_noise) != str):
-                    if(comoving):
-                        self.et_cov[i] = CLSS(bin_edges/(1.+self.z[i])/self.da[i],cosmic_noise)
-                    else:
-                        self.et_cov[i] = CLSS(bin_edges/self.da[i],cosmic_noise)
+                et_cov = np.load(cosmic_noise+self.clusters[i].name+".npy")
                 for j in xrange(nbin):
                     for k in xrange(nbin):
                             if(mscaling):
-                                self.Cov[j, k] += self.et_cov[i][j, k] *\
-                                (1./self.da[i]/self.beta_avg[i]/self.m_500[i]*\
+                                self.Cov[j, k] += et_cov[j, k] *\
+                                (1./self.da[i]/self.beta[i]/self.m_200[i]*\
                                 (const.c**2.)/4./np.pi/const.G/u.rad)**2. * self.w[i]**2. *self.size**2. / self.n[j] / self.n[k]
                             else:
-                                self.Cov[j, k] += self.et_cov[i][j, k] * \
-                                (1./self.da[i]/self.beta_avg[i] *\
+                                self.Cov[j, k] += et_cov[j, k] * \
+                                (1./self.da[i]/self.beta[i] *\
                                 (const.c**2.)/4./np.pi/const.G/u.rad)**2. * self.w[i]**2. *self.size**2. / self.n[j] / self.n[k]
 
             for i in xrange(nbin):
                 self.Cov[i, i] += self.ESD_stat_err[i]**2.
 
             self.ESDerr = np.sqrt(self.Cov.diagonal())
-
 
     def __getitem__(self, item):
         return self.clusters[item]
@@ -205,13 +188,25 @@ class cluster:
             Path of the source catalog
 
         rbin : Quantity
-            Radial bins to compute the azimuthally averaged shear components around the center of the cluster, can be computed in physical units or in angular units
+            Radial bins to compute the azimuthally averaged shear components
+            around the center of the cluster, can be computed in physical units
+            or in angular units
+        rbin_sky : Quantity
+            No matter the definition of rbin, rbin_sky is tbin defined in the sky
         gtbin : ndarray
             Tangential components computed using rbin
         gxbin : ndarray
             Cross-components computed using rbin
         dgtbin : ndarray
             Error on the tangential component
+        rbing : ndarray
+            radial bins for galaxy density
+        nbing : ndarray
+            number of galaxies per rbing ring
+        self.ng : ndarray
+            number density of galaxies per rbing
+        fmg : ndarray
+            fraction of area masked per radial bin
     '''
 
     # Image data
@@ -223,7 +218,7 @@ class cluster:
     z = None
 
     # Contamination and obscuration parameters
-    n_0, r_core, r_max, r_500 = 0*u.arcsec, 0*u.Mpc, 0*u.Mpc, 0*u.Mpc
+    n_0, r_core, r_max, r_500 = 0*u.arcsec, 0*u.arcsec, 0*u.arcsec, 0*u.arcsec
 
     def __init__(self, filepath):
         from astropy.table import Table
@@ -254,7 +249,6 @@ class cluster:
                 print('Column not recognized: ' + str(colname))
                 i+=1
                 continue
-
     def compute_ng(self, bin_edges=None, gridsize=20, comoving=False, maskfile=None):
         '''
             Compute the source density around the cluster center. The results are
@@ -270,6 +264,8 @@ class cluster:
             gridsize : int
                 Pixel size of the grid used to compute the non-masked area.
                 Smaller number = better resolution = slower computation.
+            maskfile : str
+                Path to the maskfile for masked areas.
             comoving : bool
                 Compute using comoving coordinates. Defaults to False
         '''
@@ -291,7 +287,6 @@ class cluster:
 
         #Load mask
         mask = Rutil(maskfile)
-        #box = Rutil([x.max()/2., y.max()/2., x.max(), y.max()])
 
         #Transform x and y in arcsec
         x = self.pixsize*(x - self.xcen)
@@ -340,7 +335,7 @@ class cluster:
             if(rmax[i]>max_r):
                 ng[i] = 0./area[i]
                 fmg[i] = 0.
-                dng[i] = 0/area[i]
+                dng[i] = 0./area[i]
 
 
         self.ng = ng
@@ -349,7 +344,7 @@ class cluster:
         self.nbing = nbing
         self.fmg = fmg
 
-    def compute_shear(self, bin_edges=None, raw=False, contamination=True, comoving=False):
+    def compute_shear(self, bin_edges=None, raw=False, contamination=True, comoving=False, r_limit=True):
         '''
             Compute tangential and cross component of the shear around the
             cluster center. The results are stored in gtbin and gxbin, the error
@@ -363,7 +358,7 @@ class cluster:
                 Array or the bin edges. For bins of size N,
                 gtbin and gxbin will have size N-1.
             raw : bool
-                Load raw ellipticities instead of the PSF corrected ones.
+                Load old ellipticities without the new PSF-correction.
             contamination : bool
                 Compute members contamination and obscuration. Defaults to True
             comoving : bool
@@ -382,6 +377,14 @@ class cluster:
             e1, e2 =  self.e1[idx], self.e2[idx]
             self.raw = False
 
+        # Find distance to closest edge
+        max_r = np.array([abs(self.xcen - x.max()), abs(self.xcen - x.min()), abs(self.ycen - y.max()), abs(self.ycen - y.min() )])
+        if(type(r_limit)==bool):
+            max_r = max_r.min()*self.pixsize
+        if(type(r_limit)==int):
+            max_r = np.sort(max_r)[r_limit]*self.pixsize
+            r_limit = True
+
         #Transform x and y in arcsec
         x = self.pixsize*(x - self.xcen)
         y = self.pixsize*(y - self.ycen)
@@ -399,10 +402,13 @@ class cluster:
 
         if(bin_edges.unit.is_equivalent('Mpc')):
             r = r * self.da
+            max_r = max_r*self.da
             if(comoving):
-                r = r* (1.+self.z)
+                r = r * (1.+self.z)
+                max_r = max_r*(1.+self.z)
         else:
             r = r
+            max_r = max_r
 
         rmin = bin_edges[:-1]
         rmax = bin_edges[1:]
@@ -411,31 +417,48 @@ class cluster:
         rbin = (rmax**3.-rmin**3.)/(rmax**2.-rmin**2.)*2./3. # area-weighted average
         nbin, gtbin, gxbin, dgtbin, kbin = [np.zeros(nbin) for i in xrange(5)]
 
-        rbin_cont = rbin
+        rbin_cont = np.copy(rbin.value)*rbin.unit
         if(comoving):
             # contamination should be evaluated using physical distances, NOT comoving
             rbin_cont = rbin/(1.+self.z)
 
         for i in xrange(len(rmin)):
-            idx = (r < rmax[i]) & (r >= rmin[i])
-            nbin[i] = idx.sum()
-            gtbin[i] = np.sum(wg[idx]*et[idx])/np.sum(w[idx])
-            gxbin[i] = np.sum(wg[idx]*ex[idx])/np.sum(w[idx])
-            dgtbin[i] = np.sqrt(1./np.sum(w[idx]))
-            kbin[i] = np.sum(mu[idx]*w[idx])/np.sum(w[idx])
+            if (r_limit):
+                if (rmax[i]<=max_r):
+                    idx = (r < rmax[i]) & (r >= rmin[i])
+                    nbin[i] = idx.sum()
+                    gtbin[i] = np.sum(wg[idx]*et[idx])/np.sum(w[idx])
+                    gxbin[i] = np.sum(wg[idx]*ex[idx])/np.sum(w[idx])
+                    dgtbin[i] = np.sqrt(1./np.sum(w[idx]))
+                    kbin[i] = np.sum(mu[idx]*w[idx])/np.sum(w[idx])
+                else:
+                    nbin[i] = np.nan
+                    gtbin[i] = np.nan
+                    gxbin[i] = np.nan
+                    dgtbin[i] = np.nan
+                    kbin[i] = 1.#np.sum(mu[idx]*w[idx])/np.sum(w[idx])
+            else:
+                    idx = (r < rmax[i]) & (r >= rmin[i])
+                    nbin[i] = idx.sum()
+                    gtbin[i] = np.sum(wg[idx]*et[idx])/np.sum(w[idx])
+                    gxbin[i] = np.sum(wg[idx]*ex[idx])/np.sum(w[idx])
+                    dgtbin[i] = np.sqrt(1./np.sum(w[idx]))
+                    kbin[i] = np.sum(mu[idx]*w[idx])/np.sum(w[idx])
+
 
         gtbin = gtbin/kbin
         gxbin = gxbin/kbin
 
         if(contamination):
             if(bin_edges.unit.is_equivalent('Mpc')):
-                fcontam = self.n_0*self.da * (1./(rbin_cont + self.r_core) - 1./(self.r_max + self.r_core))
-                fcontam[rbin>self.r_max] = 0
-                fobscured = 1+0.022/(0.14+(rbin_cont/self.r_500)**2.)
+                self.rbin_sky = rbin_cont/self.da # in arcsec
             else:
-                fcontam = self.n_0 * (1./(rbin_cont + self.r_core/self.da) - 1./(self.r_max/self.da + self.r_core/self.da))
-                fcontam[rbin>self.r_max/self.da] = 0
-                fobscured = 1.+0.022/(0.14+(rbin_cont/self.r_500*self.da)**2.)
+                self.rbin_sky = rbin_cont # already in sky coords
+
+            fcontam = self.n_0 * (1./(self.rbin_sky + self.r_core) - 1./(self.r_max+ self.r_core))
+            fcontam[self.rbin_sky>self.r_max] = 0
+            fobscured = 1.+0.022/(0.14+(self.rbin_sky/self.r_500)**2.)
+
 
             self.gtbin = (gtbin*(fcontam*fobscured + 1)).to(1)
             self.gxbin = gxbin
@@ -458,7 +481,7 @@ class cluster:
         print 'Source catalog: '+self.filepath
         print 'Pixel position of cluster center: '+str(self.xcen)+', '+str(self.ycen)
         print 'Contamination parameters (n_0, r_core, r_max, r_500): '+str(n_0)+' '+str(r_core)+' '+str(r_max)+' '+str(r_500)
-        print 'Angular diameter distance (h_100=1, O_m = 0.3, O_L = 0.7): '+str(self.da)
+        print 'Angular diameter distance (h_70=1, O_m = 0.3, O_L = 0.7): '+str(self.da)
         print 'Magnitude range: ('+str(mmin)+', '+str(mmax)+')'
 
     def plot_sources(self, radius=None):
@@ -473,28 +496,29 @@ class cluster:
         '''
         from matplotlib import pyplot as plt
 
-        plt.suptitle(self.name+r'  $r_{500}$ = '+str(self.r_500)+' h$^{-1}$')
+        plt.suptitle(self.name+r'  $r_{500}$ = '+str(self.r_500))
         if(radius is not None):
             radius = Quantity(radius)
-            if(radius.unit.is_equivalent('1')):
-                # Radius is in pixel
-                radius = radius.value
             if(radius.unit.is_equivalent('arcsec')):
                 # Radius is in arcsec
-                radius = radius.to('arcsec')
+                radius = radius.to('arcsec').value
                 x, y, xc, yc = (self.x*self.pixsize).to('arcsec').value, \
                             (self.y*self.pixsize).to('arcsec').value, \
                             (self.xcen*self.pixsize).to('arcsec').value, \
                             (self.ycen*self.pixsize).to('arcsec').value
                 unit = 'arcsec'
-            if(radius.unit.is_equivalent('Mpc')):
-                #Radius is in h-1 Mpc
-                radius = radius.to('Mpc').value
-                x, y, xc, yc = (self.x*self.da*self.pixsize).to('Mpc').value, \
-                            (self.y*self.da*self.pixsize).to('Mpc').value, \
-                            (self.xcen*self.da*self.pixsize).to('Mpc').value, \
-                            (self.ycen*self.da*self.pixsize).to('Mpc').value
-                unit = 'h-1 Mpc'
+            else:
+                if(radius.unit.is_equivalent('Mpc')):
+                    #Radius is in  Mpc
+                    radius = radius.to('Mpc').value
+                    x, y, xc, yc = (self.x*self.da*self.pixsize).to('Mpc').value, \
+                                (self.y*self.da*self.pixsize).to('Mpc').value, \
+                                (self.xcen*self.da*self.pixsize).to('Mpc').value, \
+                                (self.ycen*self.da*self.pixsize).to('Mpc').value
+                    unit = 'Mpc'
+                if(radius.unit.is_equivalent('1')):
+                    # Radius is in pixel
+                    radius = radius.value
 
             plt.scatter(x, y, marker='.', c='k', zorder=1)
             plt.scatter(xc, yc, marker='*', c='r', s=100, zorder=100)

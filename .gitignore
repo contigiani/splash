@@ -113,13 +113,10 @@ output/*
 *.pdf
 
 # Notebooks
-*.ipynb
+.ipynb
 
 # emcee module
 emcee/*
 
-#Duplicates
-*_2.py
-
-#test
-*test.py
+# On-going paper work
+Contigiani2018/*
