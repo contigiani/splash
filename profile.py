@@ -2,37 +2,95 @@ from astropy import units as u
 import numpy as np
 import scipy.integrate as integrate
 from scipy.integrate import simps
+from astropy import constants as const
 
 '''
-    NFW profile
+    NFW profile, hardcoded cosmology
 '''
+def concentration(Mvir, z):
+    # Mass-concentration from Duffy+ 2008
+    return 7.85*( Mvir.to(u.Msun).value/2./1e12 )**(-0.081) * (1.+z)**(-0.71)
 
-def NFW(R, params, h_max=40, epsr=0.00001):
-    R_min = 0.1
-    sigmatemp = lambda x: x*NFW_S(x, params, h_max)
-    result = np.zeros(len(R))
-    mu = integrate.quad(sigmatemp, 0.001, R_min, epsrel=epsr)[0]
+def rvir(Mvir, z):
+    #Virial overdensity from Bryan&Norman 1998, hardcoded cosmology
+    Om = 0.3
+    OL = 1-Om
+    H0 = 70*u.km/u.s/u.Mpc
 
-    for i in xrange(len(R)):
-        result[i] = 2.*(mu+integrate.quad(sigmatemp, R_min, R[i], epsrel=epsr)[0])/R[i]/R[i] - NFW_S(R[i], params, h_max)
+    O_z = Om*(1.+z)**3./(Om*(1.+z)**3. + OL)
+    Delta = (18*np.pi*np.pi + 82*(O_z-1.)-39*(O_z-1.)**2.)/O_z
 
-    return result
+    rho_bg = 3. * H0**2. * Om * (1+z)**3. / 8. / np.pi / const.G
+    return  (3*Mvir/4./np.pi/Delta/rho_bg )**(1./3.)
 
-def NFW_S(r, params, h_max=40):
-    r = np.atleast_1d(r)
-    result = np.zeros(len(r))
 
-    for i in xrange(len(r)):
-        rho_temp = lambda h: rho_NFW(np.sqrt(r[i]**2.+h**2.), params)
-        result[i] = 2*integrate.quad(rho_temp, 0., h_max)[0]
+def Mvir_to_M200m(Mvir, z, also_r=False, c=None):
+    #Finds M200m starting from Mvir, hardcoded cosmology
+    Om = 0.3
+    OL = 1-Om
+    H0 = 70*u.km/u.s/u.Mpc
 
-    return result
+    if(c is None):
+        c = concentration(Mvir, z)
+    rv = rvir(Mvir, z)
+    rs = rv/c
 
-def rho_NFW(r, params):
-    rs, rhos = params
+    f = np.log(1.+c) - c/(1.+c)
 
-    return rhos/(r/rs)/(1.+r/rs)**2.
+    r = np.linspace(0, 20, 1001)*u.Mpc
+    M_inside = Mvir/f * (np.log(1.+r/rs) - r/(rs+r) )
 
+    rho_bg = 3. * H0**2. * Om * (1+z)**3. / 8. / np.pi / const.G
+    # Finds r such that M_vir == 4pi/3 * 200rho_bg * r^3
+    idx = (np.abs(Mvir - 4.*np.pi/3. * 200. * rho_bg * r**3.) ).argmin()
+    if(also_r):
+        return M_inside[idx], r[idx] # returns r_200m too!
+    else:
+        return M_inside[idx]
+
+
+class NFW:
+    '''
+        Simple class for NFW profile, no astropy.units for faster computation.
+        Everything returned is in combinations of Msun and Mpc.
+    '''
+    def __init__(self, Mvir, z, c=None):
+        # computes concentration from mass-concentration relation if not specified
+        if(c is None):
+            c = concentration(Mvir, z)
+        rv = rvir(Mvir, z)
+        rs = rv/c
+        f = np.log(1.+c) - c/(1.+c)
+
+        self.rs = rs.to('Mpc')
+        self.rv = rv.to('Mpc')
+        self.c = c
+        self.rs_dm = rs.to('Mpc').value
+        self.prefactor = (Mvir/f/4./np.pi).to('Msun').value
+
+    def rho(self, r):
+        # Msun/Mpc/Mpc/Mpc
+        rs = self.rs_dm
+        return self.prefactor/r/(r+rs)**2.
+
+    def D_Sigma(self, r):
+        # Msun/Mpc/Mpc
+        rs = self.rs_dm
+        x =r/rs
+
+        result = np.zeros(r.size)
+
+        result[r<rs] =\
+            8 * np.arctanh( np.sqrt( (1.-x[r<rs])/(1.+x[r<rs]) ) )/ x[r<rs]**2. / np.sqrt(1.-x[r<rs]**2.) +\
+            4./x[r<rs]**2. * np.log(x[r<rs]/2.) - 2./(x[r<rs]**2. -1.) +\
+            4 * np.arctanh( np.sqrt( (1.-x[r<rs])/(1.+x[r<rs]) ) )/(x[r<rs]**2. -1.)/np.sqrt(1.-x[r<rs]**2.)
+        result[r==rs] = (10./3. + 4.*np.log(0.5))
+        result[r>rs] =\
+            8 * np.arctan( np.sqrt( (x[r>rs]-1.)/(1.+x[r>rs]) ) )/x[r>rs]**2./np.sqrt(x[r>rs]**2.-1.) +\
+            4./x[r>rs]**2. * np.log(x[r>rs]/2.) - 2./(x[r>rs]**2. -1.) +\
+            4 * np.arctan( np.sqrt( (x[r>rs]-1.)/(1.+x[r>rs]) ) )/(x[r>rs]**2.-1.)**(3./2.)
+
+        return self.prefactor/self.rs_dm/self.rs_dm * result
 
 
 '''
