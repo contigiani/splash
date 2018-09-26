@@ -11,9 +11,9 @@ The cosmology is hardcoded, see Contigiani+2018.
 
 * cosmic_noise.py : where the machinery required for the computation of cosmic noise is located.
 
-<!--## Directories
+## Directories
 
-* Contigiani2018 : notebooks and scripts used for Contigiani, Hoekstra & Bahe 2018.-->
+* Contigiani2018 : notebooks and scripts used for Contigiani, Hoekstra & Bahe 2018.
 
 ## Documentation
 
