@@ -7,7 +7,10 @@ import numpy as np
 
 print "Modules loaded"
 
-catalog_name = "highm"
+
+# For physical change cosmic_noise, bin_edges comoving, and r_t prior.
+
+catalog_name = "nomergers"
 r_limit=True
 max_n = 30000
 n_cores = 32
@@ -47,11 +50,11 @@ def lnlike(params, x, y, Covinv):
 def lnpost(params, x, y, Covinv):
     rho_s, r_s, logalpha, r_t, logbeta, loggamma, rho_0, s_e = params
     params = np.array([rho_s, r_s, logalpha, r_t, logbeta, loggamma, rho_0, s_e])
-    if( (0.<rho_s<10.) and (0.<rho_0 < 10.) and (0.1 <= r_s <= 10.)and (0. <= r_t <= 100.) and (1.<s_e<10.)):
+    if( (0.<rho_s<10.) and (0.<rho_0 < 10.) and (0.1 <= r_s <= 10.)and (0. <= r_t <= 20.) and (1.<s_e<10.)):
         return lnlike(params, x, y, Covinv) + \
                 normal(logalpha, np.log10(0.20), 0.1) +\
-                normal(logbeta, np.log10(4.), 0.2) +\
-                normal(loggamma, np.log10(6.), 0.2) +\
+                normal(logbeta, np.log10(6.), 0.2) +\
+                normal(loggamma, np.log10(4.), 0.2) +\
                 normal(r_t, 4., 2.)
     return -np.inf
 
