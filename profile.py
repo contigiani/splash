@@ -53,6 +53,7 @@ class NFW:
     '''
         Simple class for NFW profile, no astropy.units for faster computation.
         Everything returned is in combinations of Msun and Mpc.
+        arXiv:astro-ph/9908213v1 for lensing expressions
     '''
     def __init__(self, Mvir, z, c=None):
         # computes concentration from mass-concentration relation if not specified
@@ -93,6 +94,25 @@ class NFW:
         return self.prefactor/self.rs_dm/self.rs_dm * result
 
 
+    def Sigma(self, r):
+        # Msun/Mpc/Mpc
+        rs = self.rs_dm
+        x =r/rs
+
+        result = np.zeros(r.size)
+
+        result[r<rs] =\
+            2./(x[r<rs]**2.-1.)*(1.-2./np.sqrt(1.-x[r<rs]**2.)*np.arctanh( np.sqrt((1.-x[r<rs])/(1.+x[r<rs])) ) )
+        result[r==rs] = 2./3.
+        result[r>rs] =\
+            2./(x[r>rs]**2. -1.) * (1.-2./np.sqrt(x[r>rs]**2.-1.)*np.arctan(np.sqrt((x[r>rs]-1.)/(1.+x[r>rs]))))
+        return self.prefactor/self.rs_dm/self.rs_dm  * result
+
+    def D_Sigma_reduced(self, r, Sigma_crit):
+        result = np.zeros(r.size)
+        return self.D_Sigma(r)/(1.-self.Sigma(r)/Sigma_crit)
+
+
 '''
     DK14 profile, see Diemer&Kravtsov 2014, Baxter+ 2017
 '''
@@ -100,7 +120,7 @@ class NFW:
 
 def DK14(R, params, h_max=40., R_min=0.05, mode=0, epsr=0.001, hp=False):
     '''
-        Return the excess surface density at R (in h100-1 Mpc)
+        Return the excess surface density at R
 
         Parameters
         ----------

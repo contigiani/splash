@@ -97,7 +97,6 @@ class cluster_sample:
                 the directory cosmic_noise_path. This is binning dependent!
         '''
         import astropy.constants as const
-
         bin_edges = Quantity(bin_edges)
         if(bin_edges.unit.is_equivalent('1')):
             [self.clusters[i].compute_shear(bin_edges*self.r_500[i], raw, contamination, comoving, r_limit) for i in xrange(self.size)]
@@ -108,6 +107,9 @@ class cluster_sample:
             self.ESDs, self.ESDs_err = np.zeros([self.size, len(bin_edges)-1])/u.Mpc/u.Mpc, np.zeros([self.size, len(bin_edges)-1])/u.Mpc/u.Mpc
         else:
             self.ESDs, self.ESDs_err = np.zeros([self.size, len(bin_edges)-1])*u.Msun/u.Mpc/u.Mpc, np.zeros([self.size, len(bin_edges)-1])*u.Msun/u.Mpc/u.Mpc
+
+
+        self.Sigma_crit = ((const.c**2.)/self.da/self.beta/4./np.pi/const.G/u.rad).to("Msun/Mpc/Mpc")
 
         for i in xrange(self.size):
             if(mscaling):
